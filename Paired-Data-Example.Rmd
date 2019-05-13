@@ -1,0 +1,122 @@
+---
+title: "Paired-Data Examples"
+author: "Melissa Wong"
+date: "4/6/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options("scipen" = 1, "digits" = 4)
+
+library(tidyr)
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+```
+
+# Example 1: Two measures
+
+```{r}
+# Create some dummy data
+
+ measure1 = rnorm(20, 0.95, 0.01)
+ measure2 = rnorm(20, 0.94, 0.01)
+
+# measure1 = c(0.0, 0.0, 0.9625, 0.965, 0.95, 0.955, 0.958, 0.96, 0.9625, 0.955, 
+#            0.0, 0.0, 0.0, 0.0, 0.0, 0.9625, 0.965, 0.95, 0.955, 0.958)
+# measure2 = c(0.0, 0.0, 0.9655, 0.9575, 0.9625, 0.95, 0.957, 0.959, 0.961, 0.959, 
+#            0.0, 0.0, 0.0, 0.0, 0.0, 0.97, 0.955, 0.958, 0.962, 0.959)
+
+mydata = data.frame(measure = c(rep("measure1", 20), rep("measure2", 20)),
+                    subject = factor(rep(seq(1:20), 2)),
+                    value = c(measure1, measure2))
+
+ggplot(mydata) +
+  geom_boxplot(mapping = aes(x = measure, y = value, color = measure))
+
+diff12 = measure1 - measure2
+
+# Check normality assumption
+# QQplot of differences
+# ggplot() +
+#   stat_qq
+
+qqnorm(diff12, main = "Difference between measure 1 and measure2")
+qqline(diff12)
+```
+
+## Check normality of differences
+```{r}
+# Shapiro-Wilk test
+shapiro.test(diff12)
+```
+
+## Compare t-test vs. paired t-test
+
+```{r}
+# t-test
+t1 <- t.test(measure1, measure2)
+
+# paired t-test
+t2 <- t.test(measure1, measure2, paired = TRUE)
+
+# Alternative notation for paired t-test
+t3 <- t.test(value ~ measure, paired = TRUE, data = mydata)
+```
+
+Test | Test Statistic | p-value
+---- | -------------- | -------
+t-test | $`r t1$statistic`$ | $`r t1$p.value`$
+paired t-test | $`r t2$statistic`$ | $`r t2$p.value`$
+paired t-test (alt notation) | $`r t3$statistic`$ | $`r t3$p.value`$
+
+## Equivalent tests with aov
+```{r , results='hold'}
+# One-way aov (equivalent to t-test)
+a1 <- summary(aov(value ~ measure, data = mydata))[[1]]
+a1
+a1.F <- a1$`F value`[1]
+a1.pval <- a1$`Pr(>F)`[1]
+```
+Test  |Test Statistic | Equivalent t statistic | p-value
+---- | ----------------- | ------------- | -------
+1-way ANOVA | $`r a1.F`$ | $`r sqrt(a1.F)`$ | $`r a1.pval`$
+
+```{r}
+# One-way aov with repeated measures (equivalent to paired t-test)
+a2 <- summary(aov(value ~ measure + Error(subject), data = mydata))
+a2
+a2.F <- a2[[2]][[1]]$`F value`[1]
+a2.pval <- a2[[2]][[1]]$`Pr(>F)`[1]
+```
+
+
+Test  |Test Statistic | Equivalent t statistic | p-value
+---- | ----------------- | ------------- | -------
+1-way ANOVA w/Repeated Measures | $`r a2.F`$ | $`r sqrt(a2.F)`$ | $`r a2.pval`$
+
+# Compare three data sets
+```{r}
+# ANOVA for all three measures
+measure3 = rnorm(20, 0.945, 0.02)
+
+mydata = data.frame(measure = c(rep("measure1", 20), rep("measure2", 20), 
+                              rep("measure3", 20)),
+                    subject = factor(rep(seq(1:20), 3)),
+                    value = c(measure1, measure2, measure3))
+
+ggplot(mydata) +
+  geom_boxplot(mapping = aes(x = measure, y = value, color = measure))
+
+# Anova with repeated measures
+summary(aov(value ~ measure + Error(subject), data = mydata))
+
+# Using lmer
+mdl <- lmer(value ~ measure + (1 | subject), data=mydata, REML=TRUE)
+anova(mdl)
+ranova(mdl)
+```
+
+
