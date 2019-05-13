@@ -1,0 +1,275 @@
+---
+title: "ANOVA_Examples"
+output:
+  html_document:
+    df_print: paged
+---
+
+# General Notes
+
+1. Fixed effects ANOVA
+  + $H_o$ is testing whether means for all groups are equal.
+  + F-statistic uses MSE for denominator (MSE = Expected Mean Squares)
+2. Random effects ANOVA 
+  + $H_o$ testing if treatment variances = 0.
+  + F-statistic uses Expected Mean Squares (i.e., Mean Square Within) for denominator
+  + Each source of variation will consist of a linear combination of $\sigma_e^2$ plus variance components whose subscript matches at least one letter in the source of variation.
+  + The coefficients for the identified variance components will be the letters not found in the
+subscript of the variance components.
+3. Mixed Models
+  + If Factor B is nested within Factor A, there can be no interaction.
+  + Subsampling is treated as a random effect nested within treatments.
+
+# R-isms
+1. aov() can only be used for balanced designs
+2. lmer() can only be used for models with random effects
+  + If we are doing a LR test to compare models, make sure to set REML = FALSE in lmer()
+
+```{r setup, include=FALSE}
+rm(list=ls())
+
+options("scipen" = 1, "digits" = 4)
+
+library(car) # Anova function for Type II or Type III Anova
+library(emmeans)  # emmeans function (lsmeans deprecated)
+library(lme4) # lmer
+```
+
+# List of Examples
+1. [Two-Way Anova, Balanced, r = 1]
+  + [Fixed Effects]
+    - [No interaction term]
+    - [Nested term - saturated model]
+    - [With interaction - saturated model]
+  + [Mixed Models]
+    - [Stim-Fixed, Plot-Random, No interaction term]
+2. [Two-way ANOVA Balanced, r = 2]
+  + [Fixed Effects with interaction term]
+  + [Fixed effect, nested]
+  + [Mixed model, nested]
+
+3. [Two-Way ANOVA Unbalanced, Subsampling]
+
+# Two-Way Anova, Balanced, r = 1
+```{r}
+stim = as.factor(c(rep("S1",4), rep("S2", 4), rep("S3", 4), rep("S4", 4)))
+plot = as.factor(rep(c("1", "2", "3", "4"), 4))
+rootwt = 
+c(3.4, 3.2, 3.233, 3.067,
+  3.833, 3.733, 3.6, 3.55,
+  3.9, 3.7, 3.35, 3.65,
+  4.33, 3.933, 4.067, 3.867)
+
+interaction.plot(plot, stim, rootwt)
+
+```
+
+## Fixed Effects
+
+### No interaction term
+
+$$Y_{ij} = \alpha_i + \beta_j + \epsilon_{ij}$$
+
+ Source of Variation | df  | EMS | F  
+-------------------- | --- | --- | --- 
+A (Stim)            | $4-1 = 3$ | $\sigma_e^2 + b \frac{\sum_i\alpha_i^2}{a}$ | $\frac{EMS_A}{MS_E}$
+B (Plot) | $4-1 = 3$| $\sigma_e^2 + a \frac{\sum_j \beta_j^2}{b}$ | $\frac{EMS_B}{MS_E}$
+Error | $9$ |  $\sigma_e^2$
+Total | $16-1 = 15$      |  
+
+
+```{r}
+model.aov = aov(rootwt ~ plot + stim)
+summary(model.aov)
+```
+
+### Nested term - saturated model
+
+$$Y_{ij} = \alpha_i + \beta_{j(i)} + \epsilon_{ij}$$
+
+ Source of Variation | df | EMS | F  
+--- | --- | --- | --- 
+A (Stim)          | $4-1 = 3$ | $b\frac{\sum_i\alpha_i^2}{a}$ 
+B (Plot) (Plot(Stim)) | $4(4-1) = 12$ | $\frac{\sum_i\sum_j\beta_{j(i)}^2}{ab}$
+Total | $16-1 = 15$     |  
+
+```{r}
+model.aov = aov(rootwt ~ stim/plot)
+#model.aov = aov(rootwt ~ stim + stim:plot)   # Equivalent model
+summary(model.aov)
+```
+
+### With interaction - saturated model
+
+$$Y_{ij} = \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ij}$$
+
+ Source of Variation | df | EMS |   
+--- | --- | --- | --- 
+A (Stim) | $4-1 = 3$ | $b\frac{\sum_i\alpha_i}{a}$ 
+B (Plot) | 4 -1 = 3 | $a\frac{\sum_j\beta_j}{b}$ 
+A:B (Stim:Plot) | (4 -1)(4-1) = 9 | $\frac{\sum_i\sum_j(\alpha\beta)_{ij}}{ab}$  
+Total | $16-1 = 15$     |  
+
+```{r}
+model.aov = aov(rootwt ~ plot + stim + plot:stim)
+#model.aov = aov(rootwt ~ plot * stim)   # Equivalent model
+summary(model.aov)
+```
+
+## Mixed Models
+
+### Stim-Fixed, Plot-Random, No interaction term
+
+$$Y_{ij} = \alpha_i + \beta_j + \epsilon_{ij}$$
+
+ Source of Variation | df | EMS  | F
+--- | --- | --- | --- 
+A (Stim) | $4-1 = 3$ | $\sigma_e^2 + b\frac{\sum_i \alpha_i^2}{a}$ | $\frac{EMS_A}{MS_E}$
+B (Plot) | $4-1 = 3$     | $\sigma_e^2 + a\sigma_b^2$ | $\frac{EMS_B}{MS_E}$
+Error | $(4-1)(4-1) = 9$ |  $\sigma_e^2$
+Total | 16-1 = 15 |  
+
+```{r}
+# stim - fixed effect
+# plot - random effect
+model.lmer = lmer(rootwt ~ 1 + stim + (1|plot))
+summary(model.lmer)
+anova(model.lmer)
+```
+
+```{r}
+model.aov = aov(rootwt ~ stim + Error(plot))
+summary(model.aov)
+```
+
+# Two-way ANOVA Balanced, r = 2
+```{r}
+stim = as.factor(c(rep("S1",8), rep("S2", 8), rep("S3", 8), rep("S4", 8)))
+plot = as.factor(rep(c("1", "1", "2", "2", "3", "3", "4", "4"), 4))
+plot_unique = as.factor(c("S1-1", "S1-1", "S1-2", "S1-2", "S1-3", "S1-3", 
+                          "S1-4", "S1-4",
+                          "S2-1", "S2-1", "S2-2", "S2-2", "S2-3", "S2-3", 
+                          "S2-4", "S2-4",
+                          "S3-1", "S3-1", "S3-2", "S3-2", "S3-3", "S3-3",
+                          "S3-4", "S3-4",
+                          "S4-1", "S4-1", "S4-2", "S4-2", "S4-3", "S4-3",
+                          "S4-4", "S4-4"))
+rootwt = 
+c(3.3, 3.5, 3.5, 3.0, 3.4, 3.1, 3.3, 2.9,
+  3.7, 4.0, 3.5, 4.0, 3.4, 3.8, 3.4, 3.7,
+  3.8, 4.0, 3.6, 3.8, 3.3, 3.4, 3.6, 3.7,
+  4.3, 4.4, 3.8, 4.1, 3.9, 4.2, 3.7, 4.0)
+
+interaction.plot(plot, stim, rootwt)
+
+```
+
+## Fixed Effects with interaction term
+
+$$Y_{ijk} = \alpha_i + \beta_j + (\alpha\beta)_{ij} + \epsilon_{ijk}$$
+
+where $i = 1...a, j = 1...b, k = 1..r$
+
+ Source of Variation | df | EMS | F  
+--- | --- | --- | --- 
+A (Stim) | $4-1 = 3$ | $\sigma_e^2 + rb\frac{\sum_i\alpha_i}{a}$ | $\frac{EMS_A}{MS_E}$
+B (Plot) | $4 -1 = 3$ | $\sigma_e^2 + ra\frac{\sum_j\beta_j}{b}$ | $\frac{EMS_B}{MS_E}$
+A:B (Stim:Plot) | $(4 -1)(4-1) = 9$ | $\sigma_e^2 + r\frac{\sum_i\sum_j(\alpha\beta)_{ij}}{ab}$ | \frac{EMS_AB}{MS_E}
+Error | $16$ | $\sigma_e^2$
+Total | $32-1 = 31$     |  
+
+```{r}
+model.aov = aov(rootwt ~ plot + stim + plot:stim)
+#model.aov = aov(rootwt ~ plot * stim)   # Equivalent model
+summary(model.aov)
+```
+
+# Fixed effect, nested
+
+$$Y_{ijk} = \alpha_i + \beta_{j(i)} + \epsilon_{ijk}$$
+
+where $i = 1...a, j = 1...b, k = 1..r$
+
+ Source of Variation | df | EMS | F  
+--- | --- | --- | --- 
+A (Stim) | $4-1 = 3$ | $\sigma_e^2 + rb\frac{\sum_i\alpha_i}{a}$ | $\frac{EMS_A}{MS_E}$
+B (Plot) | $4(4-1) = 12$ | $\sigma_e^2 + r\frac{\sum_j\beta_{j(i)}}{ab}$ | $\frac{EMS_B}{MS_E}$
+Error | $16$ | $\sigma_e^2$
+Total | $32-1 = 31$     |  
+
+```{r}
+model.aov = aov(rootwt ~ stim/plot)
+# model.aov = aov(rootwt ~ stim + stim:plot)
+summary(model.aov)
+```
+
+
+## Mixed model, nested
+
+$$Y_{ijk} = \alpha_i + \beta_{j(i)} + \epsilon_{ijk}$$
+
+where $i = 1...a, j = 1...b, k = 1..r$
+
+ Source of Variation | df | EMS | F  
+--- | --- | --- | --- 
+A (Stim) | $4-1 = 3$ | $\sigma_e^2 + r\sigma_{b(a)}^2 + rb\frac{\sum_i\alpha_i}{a}$ | $\frac{EMS_A}{MS_{B(A)}}$
+B(A) (Plot(Stim)) | $4(4 -1) = 12$ | $\sigma_e^2 + r\sigma_{b(a)}^2$ | $\frac{EMS_B}{MS_E}$
+Error | $16$ | $\sigma_e^2$
+Total | $32-1 = 31$     |  
+
+
+```{r}
+# stim - fixed effect
+# plot - random effect, plot nested in stim
+model.lmer = lmer(rootwt ~ 1 + stim + (1|stim:plot))
+# The following model is equivalent
+# model.lmer = lmer(rootwt ~ 1 + stim + (1|plot:stim))
+summary(model.lmer)
+anova(model.lmer)
+```
+
+
+```{r}
+# Check replications
+df = data.frame(rootwt = rootwt, stim = stim, plot = plot)
+replications(rootwt ~ stim + Error(plot:stim), data = df)
+model.aov = aov(rootwt ~ stim + Error(stim:plot))
+summary(model.aov)
+```
+
+```{r}
+# Alternate method to handle nesting
+summary(aov(rootwt ~ stim + Error(plot_unique)))
+```
+
+## Two-Way ANOVA Unbalanced, Subsampling
+
+```{r}
+# Use lmer function
+stim = as.factor(c(rep("S1",15),rep("S2",16),rep("S3",14),rep("S4",12)))
+plotS1 = as.factor(c(rep("1",3),rep("2",3),rep("3",3),rep("4",3),rep("5",3)))
+plotS2 = as.factor(c(rep("1",3),rep("2",3),rep("3",3),rep("4",2),rep("5",3),rep("6",2)))
+plotS3 = as.factor(c(rep("1",3),rep("2",3),rep("3",2),rep("4",2),rep("5",2),rep("6",2)))
+plotS4 = as.factor(c(rep("1",3),rep("2",3),rep("3",3),rep("4",3)))
+plot = as.factor(c(plotS1,plotS2,plotS3,plotS4))
+rootwt = 
+c(3.3,3.4,3.5,3.1,3.5,3.0,3.2,3.1,3.4,3.3,2.9,3.0,3.3,3.3,3.1,  
+  3.8,3.7,4.0,3.5,3.8,3.9,3.6,3.4,3.8,3.4,3.7,3.6,3.7,3.6,3.5,3.9, 
+  3.8,3.9,4.0,3.6,3.7,3.8,3.3,3.4,3.6,3.7,3.5,3.9,3.4,3.7,
+  4.3,4.3,4.4,4.1,3.9,3.8,4.2,4.1,3.9,3.7,3.9,4.0)
+interaction.plot(plot, stim, rootwt)
+```
+
+```{r}
+# stim - fixed effect
+# plot - nested in stim, random effect
+# cores - nested within plots within stim, random effect
+model.lmer = lmer(rootwt ~ stim + (1|plot:stim))
+#summary(model.lmer)
+anova(model.lmer)
+```
+
+```{r}
+emmeans(model.lmer, "stim")
+```
+
