@@ -101,7 +101,7 @@ ggplot() +
 
 # Can we just scale support of Zdf to [0,1]?  Doesn't look like we can...
 Zdf_scaled = data.frame(z = Zdf$z/2,
-                        pz = Zdf$pz)
+                        pz = 2*Zdf$pz)
 
 Zs2 = Xs + Ys - (Xs * Ys)
 
@@ -113,8 +113,9 @@ ggplot() +
                  color = "black",
                  alpha = 0.2) +
   geom_line(data = Zdf_scaled,
-            mapping = aes(z, pz),
-            color = "blue")
+            mapping = aes(z, pz, color = "Scaled Conv(X,Y)")) +
+  geom_line(data = Zdf,
+            mapping = aes(z, pz, color = "Conv(X,Y)"))
 
 
 #
