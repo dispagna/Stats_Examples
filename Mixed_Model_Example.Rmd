@@ -1,0 +1,102 @@
+---
+title: "Mixed Model Example"
+author: "Melissa Wong"
+date: "4/27/2020"
+output: pdf_document
+---
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+options("scipen" = 1, "digits" = 4)
+
+library(tidyverse)
+library(corrplot)
+```
+
+# Read in Data
+
+```{r}
+# Notes about data
+# sleep is continuous (actual hours of sleep)
+# numpains is continuous (actual number of areas of the body that were hurting as a result #of physical activity on a particular day - knees and ankles being the most common).
+# Nutrition, fluids, physical state, mental state, quality of workout and rate of exertion are self-rated items. 
+#Illness and sportpain are yes/no. 
+#Relaxin phase is a three-level factor.
+
+# make qualitative features factors
+
+athletes_orig <- read.table("./data.txt", header=TRUE) %>%
+  mutate_at(vars(PlayerNum, Nutrition, Illness, Physical.State, Mental.State,
+                 Relaxin2, WO_typeCode, Quality_WkO, Rate.exertion, SportPain),
+            list(factor)) 
+
+summary(athletes_orig)
+```
+
+# Check missing data
+
+Looks like there may be rows with multiple missing predictors; let's check if it's all from the same player.
+
+```{r}
+athletes_orig %>% filter(is.na(AgeYrs))
+```
+
+Looks like player 8 is a problem; missing data for predictors of interest (Relaxin, Age, Team3Grps) as well as responses (SportPain and NumPain)
+
+```{r}
+# Drop player 8 
+# Drop the rows where Relaxin is NA since that's a predicotor we care about
+# Drop the rows where SportPain are NA since that's the response we care about
+# Drop columns that won't be used in the model
+athletes <- athletes_orig %>%
+  filter(!is.na(Relaxin2) & !is.na(NumPains) & !is.na(SportPain)) %>%
+  filter(PlayerNum != 8) %>%
+  select(-Index, -Player.order,-AgeYrs, -Fluids, -WO_typeCode, -Quality_WkO, 
+           -Rate.exertion, -Workout.time) %>%
+  mutate(Index = row_number()) %>%
+  group_by(PlayerNum) %>%
+  mutate(Measurement = row_number()) %>%
+  ungroup()
+
+summary(athletes)
+anyNA(athletes)
+```
+
+Do a quick sanity check that there aren't any rows where NumPains > 0 but SportPain = 0 or
+NumPains = 0 and SportPain = 1
+```{r}
+athletes %>%
+  filter((NumPains > 0 & SportPain == 0) | (NumPains == 0 & SportPain == 1))
+```
+
+Now let's look at relationships between predictors in the clean data.
+```{r}
+pairs(athletes)
+```
+
+Let's zoom in on BMI/Height/Weight.  There's a strong positive correlation between Weight and both Height so I won't use Weight in the model.
+
+```{r}
+pairs(~ BMI + Height_in + Weight_lbs, data=athletes)
+```
+
+Let's also zoom in on Age & Team3Grp.  As expected, the Varsity group is generally older than the JV group which is likewise older than the 9th group. I'm just going to use Team3Grps in the model.
+
+```{r}
+pairs(~ AgeMonths + Team3Grps, data=athletes)
+```
+
+# Create models
+
+To simplify things I'll only use the predictors \textit{BMI, Height_in, Team3Grp, Relaxin2}.  I'll consider two models: 1) logistic regression for P[SportPain = 1] and 2) a GLM for NumPains.
+
+First, check whether or not data is balanced.
+
+```{r}
+athletes %>%
+  group_by(PlayerNum) %>%
+  summarise(count = n())
+```
+
+Data is unbalanced, so 
