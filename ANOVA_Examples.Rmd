@@ -19,6 +19,7 @@ subscript of the variance components.
 3. Mixed Models
   + If Factor B is nested within Factor A, there can be no interaction.
   + Subsampling is treated as a random effect nested within treatments.
+4. Good explanation of difference between crossed & nested random effects and how to specify them in lme4:  https://stats.stackexchange.com/questions/228800/crossed-vs-nested-random-effects-how-do-they-differ-and-how-are-they-specified
 
 # R-isms
 1. aov() can only be used for balanced designs
