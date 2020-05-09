@@ -11,7 +11,7 @@ rm(list=ls())
 options("scipen" = 1, "digits" = 4)
 
 library(tidyverse)
-library(corrplot)
+library(lme4)
 ```
 
 # Read in Data
@@ -46,7 +46,7 @@ Looks like player 8 is a problem; missing data for predictors of interest (Relax
 
 ```{r}
 # Drop player 8 
-# Drop the rows where Relaxin is NA since that's a predicotor we care about
+# Drop the rows where Relaxin is NA since that's the key predictor we care about
 # Drop the rows where SportPain are NA since that's the response we care about
 # Drop columns that won't be used in the model
 athletes <- athletes_orig %>%
@@ -64,18 +64,19 @@ anyNA(athletes)
 ```
 
 Do a quick sanity check that there aren't any rows where NumPains > 0 but SportPain = 0 or
-NumPains = 0 and SportPain = 1
+NumPains = 0 and SportPain = 1.
 ```{r}
 athletes %>%
   filter((NumPains > 0 & SportPain == 0) | (NumPains == 0 & SportPain == 1))
 ```
+TO DO:  Need more info to know whether or not this apparent inconsistency is really a problem.
 
 Now let's look at relationships between predictors in the clean data.
 ```{r}
 pairs(athletes)
 ```
 
-Let's zoom in on BMI/Height/Weight.  There's a strong positive correlation between Weight and both Height so I won't use Weight in the model.
+Let's zoom in on BMI/Height/Weight.  There's a strong positive correlation between Weight and both BMI and Height; I'll just keep BMI and Height in the model.
 
 ```{r}
 pairs(~ BMI + Height_in + Weight_lbs, data=athletes)
@@ -89,14 +90,162 @@ pairs(~ AgeMonths + Team3Grps, data=athletes)
 
 # Create models
 
-To simplify things I'll only use the predictors \textit{BMI, Height_in, Team3Grp, Relaxin2}.  I'll consider two models: 1) logistic regression for P[SportPain = 1] and 2) a GLM for NumPains.
+To simplify things I'll only use the predictors _BMI, Height_in, Team3Grp, Relaxin2_.  
 
-First, check whether or not data is balanced.
+## Logistic Mixed Effects Model
+
+Let $Y = 1$ be the indicator for _SportPain_.  Then the model is
+
+$$logit(P[Y=1]) = \alpha + T_i + G_{j(i)} + B_{k(j)} + H_{k(j)} + R_{k(j)} + \epsilon_{ijk}$$
+where $i$ is the team, $j$ is the girl and $k$ is the measurement, $T_i \sim N(0, \sigma_T^2)$, and $G_{j(i)} \sim N(0, \sigma_G^2)$.
 
 ```{r}
-athletes %>%
-  group_by(PlayerNum) %>%
-  summarise(count = n())
+# Setup data
+athletes_subset <- athletes %>%
+  select(PlayerNum, Team3Grps, Height_in, BMI, Relaxin2, SportPain) 
+
+# Create model
+SportPainMdl <- glmer(SportPain ~ (1|Team3Grps) + (1|PlayerNum) 
+                      + Height_in + BMI + Relaxin2, 
+                      data=athletes_subset, family=binomial(),
+                      nAGQ=0)
+# Note: nAGQ=0 resolves warning about large eigenvalue ratio
+
+summary(SportPainMdl)
 ```
 
-Data is unbalanced, so 
+```{r}
+# Confirm I get same result if I treat girls as nested factor within Team
+athletes_subset <- athletes %>%
+  select(PlayerNum, Team3Grps, Height_in, BMI, Relaxin2, SportPain) %>%
+  group_by(Team3Grps) %>%
+  mutate(Group_PlayerNum = as.integer(factor(PlayerNum)))
+
+# Create model
+SportPainMdl2 <- glmer(SportPain ~ (1|Team3Grps) + (1|Team3Grps:Group_PlayerNum)
+                       + Height_in + BMI + Relaxin2, 
+                       data=athletes_subset, family=binomial(),
+                       nAGQ=0)
+# Note: nAGQ=0 resolves warning about large eigenvalue ratio
+
+summary(SportPainMdl2)
+```
+
+## Log-linear Mixed Effects Model
+
+Does _NumPains_ look Poisson distributed?
+
+```{r}
+mu_hat <- mean(athletes$NumPains)
+sigma_hat <- var(athletes$NumPains)
+
+N <- sum(athletes$NumPains)
+
+poissonCheck <- athletes %>%
+  select(NumPains) %>%
+  group_by(NumPains) %>%
+  summarize(observed=n()) %>%
+  ungroup() %>%
+  mutate(expected = N * dpois(NumPains, mu_hat))
+
+poissonCheck%>%
+  pivot_longer(cols=c(observed, expected)) %>%
+  ggplot(aes(x=NumPains, y=value, colour=name)) +
+  geom_point() +
+  geom_line()
+```
+
+Plot doesn't look too bad, might have slightly excess zeros.  But $\mu = `r mu_hat` \ne \sigma = `r sigma_hat`$, so Poisson may not be a good fit.  Let's see what happens.
+
+Let $Y$ be the count for _NumPains_.  Then the model is
+
+$$log(Y) = \alpha + T_i + G_{j(i)} + B_{k(j)} + H_{k(j)} + R_{k(j)} + \epsilon_{ijk}$$
+
+where $i$ is the team, $j$ is the girl and $k$ is the measurement, $T_i \sim N(0, \sigma_T^2)$, and $G_{j(i)} \sim N(0, \sigma_G^2)$.
+
+```{r}
+# Prepate data
+athletes_subset <- athletes %>%
+  select(PlayerNum, Team3Grps, Height_in, BMI, Relaxin2, NumPains) 
+
+# Create model
+NumPainsMdl <- glmer(NumPains ~ (1|Team3Grps) + (1|PlayerNum) 
+                      + Height_in + BMI + Relaxin2, 
+                      data=athletes_subset, family=poisson(),
+                     nAGQ=0)
+# Note: nAGQ=0 resolves warning about large eigenvalue ratio
+
+summary(NumPainsMdl)
+
+plot(NumPainsMdl)
+
+```
+
+See https://stats.stackexchange.com/questions/70558/diagnostic-plots-for-count-regression for examples of diagnostic plots for Poisson mixed models.
+
+```{r}
+res <- residuals(NumPainsMdl, type="deviance")
+plot(log(predict(NumPainsMdl)), res)
+abline(h=0, lty=2)
+qqnorm(res)
+qqline(res)
+```
+
+This doesn't look too bad, but let's try a negative binomial anyway.
+
+## Negative Binomial Model
+
+Based on residuals, the assumption that _NumPains_ is Poisson does not appear valid.
+
+```{r}
+# Calculate chi-squared statistic
+# Need to combine the last 3 cells so counts are at least 5
+observed <- c(poissonCheck$observed[1:4], sum(poissonCheck$observed[5:8]))
+expected <- c(poissonCheck$expected[1:4], sum(poissonCheck$expected[5:8]))
+X2 <- sum((expected-observed)^2/expected)
+pchisq(X2, length(observed)-2, lower.tail=FALSE)
+#chisq.test(observed, p=expected/sum(expected)) #this has wrong dof
+```
+
+```{r}
+res <- MASS::fitdistr(athletes$NumPains, "negative binomial")
+# Alternate method to get theta for neg binom
+# fit = MASS::glm.nb(athletes$NumPains ~ 1); fit$theta;
+
+# Prepate data
+athletes_subset <- athletes %>%
+  select(PlayerNum, Team3Grps, Height_in, BMI, Relaxin2, NumPains) 
+
+# Create model
+NumPainsMdl2 <- glmer(NumPains ~ (1|Team3Grps) + (1|PlayerNum) 
+                      + Height_in + BMI + Relaxin2, 
+                      data=athletes_subset, 
+                      family=MASS::negative.binomial(theta = res$estimate[1]),
+                      nAGQ = 0)
+
+summary(NumPainsMdl2)
+
+plot(NumPainsMdl2)
+```
+
+
+```{r}
+res <- residuals(NumPainsMdl2, type="deviance")
+plot(log(predict(NumPainsMdl2)), res)
+abline(h=0, lty=2)
+qqnorm(res)
+qqline(res)
+```
+
+Looks like Poisson actually is a better fit.  Check BIC and AIC.
+```{r}
+BIC(NumPainsMdl)
+BIC(NumPainsMdl2)
+```
+
+```{r}
+AIC(NumPainsMdl)
+AIC(NumPainsMdl2)
+```
+
+
