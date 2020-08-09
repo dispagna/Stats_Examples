@@ -19,6 +19,8 @@ ui <- fluidPage(
 
     # Application title
     titlePanel("Comparing Two Means"),
+    withMathJax(),
+    
     fluidRow(
         column(6,
                # General Description
@@ -70,7 +72,26 @@ ui <- fluidPage(
                    ),
                    tabPanel("ANOVA"),
                    tabPanel("Linear Regression",
-                            p("Some words here..."),
+                            helpText("If we use an indicator
+                              variable \\(\\begin{equation}
+                                       x_i = 
+                                           \\begin{cases}
+                                                0, & X \\\\
+                                                1, & Y
+                                            \\end{cases}
+                                    \\end{equation}\\)"),
+                            
+                            helpText("then we can formulate this as a linear
+                              regression problem
+                              $$\\mu_i = \\alpha + \\beta * x_i$$"),
+                            
+                            helpText("where testing for \\(\\beta=0\\) is
+                                     equivalent to testing if the two population
+                                     means are equal."),
+                            
+                            em("Note that for two groups with equal variances,
+                                      the F-test statistic = t-test statistic",
+                                      tags$sup(2), "and the p-values are identical."),
                             
                             verbatimTextOutput("lrResults"),
                             plotOutput("lrPlot")
