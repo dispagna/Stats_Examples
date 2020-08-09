@@ -19,14 +19,14 @@ source("anovaTest.R")
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Comparing Two Means"),
+    titlePanel("Comparing Means From Two Groups"),
     withMathJax(),
     
     fluidRow(
         column(6,
                # General Description
-               p("A t-test is the typical statistical test used to compare two population
-      means. However, it's instructive to see that this same comparison can
+               p("A t-test is the typical statistical test used to compare
+      means from two groups. However, it's instructive to see that this same comparison can
       be thought of in terms of Analysis of Variance (ANOVA), linear regression,
        or a Bayesian estimation problem."),
                
@@ -104,7 +104,7 @@ ui <- fluidPage(
                             
                             helpText("where testing whether the slope of the fitted
                                       line is zero (i.e., \\(\\beta=0\\)) is
-                                     equivalent to testing if the two population
+                                     equivalent to testing if the two group
                                      means are equal."),
                             
                             em("Note that for two groups with equal variances,
