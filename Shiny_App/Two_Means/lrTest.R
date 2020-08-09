@@ -23,5 +23,6 @@ lrResults <- function(samplesX, samplesY)
 {
   df <- bindSamples(samplesX, samplesY)
   
-  summary(lm(values ~ idx, data=df))
+  lm(values ~ idx, data=df)
 }
+

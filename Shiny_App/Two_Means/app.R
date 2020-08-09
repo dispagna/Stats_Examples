@@ -13,6 +13,7 @@ library(tidyverse)
 source("plotTwoNorms.R")
 source("tTests.R")
 source("lrTest.R")
+source("anovaTest.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -57,6 +58,7 @@ ui <- fluidPage(
        be formulated."),
                
                tabsetPanel(
+                   ### t-Test ###
                    tabPanel("t-Test",
                             p("There are two types of t-tests, pooled and 
                    Welch's.  The pooled t-test is appropriate when
@@ -69,8 +71,23 @@ ui <- fluidPage(
                    shown below."),
                             
                             verbatimTextOutput("tTestResults")
-                   ),
-                   tabPanel("ANOVA"),
+                            ),
+                   
+                   ### ANOVA ###
+                   tabPanel("ANOVA",
+                            helpText("This problem can also be thought of as 
+                                     a one-way completely random design (CRD)
+                                     analysis of variance (ANOVA) where the
+                                     treatment has two levels (X and Y) and
+                                     there are n repetitions per treatment."),
+                            
+                            em("Note the F-statistic and p-value are identical for ANOVA
+                               and linear regression."),
+                            
+                            verbatimTextOutput("anovaResults")
+                            ),
+
+                   ### Linear Regression ###
                    tabPanel("Linear Regression",
                             helpText("If we use an indicator
                               variable \\(\\begin{equation}
@@ -85,17 +102,20 @@ ui <- fluidPage(
                               regression problem
                               $$\\mu_i = \\alpha + \\beta * x_i$$"),
                             
-                            helpText("where testing for \\(\\beta=0\\) is
+                            helpText("where testing whether the slope of the fitted
+                                      line is zero (i.e., \\(\\beta=0\\)) is
                                      equivalent to testing if the two population
                                      means are equal."),
                             
                             em("Note that for two groups with equal variances,
-                                      the F-test statistic = t-test statistic",
+                                      the F-statistic = t-statistic",
                                       tags$sup(2), "and the p-values are identical."),
                             
                             verbatimTextOutput("lrResults"),
                             plotOutput("lrPlot")
                    ),
+                   
+                   ### Bayesian Estimation ###
                    tabPanel("Bayesian Estimation")
                )
                )
@@ -115,16 +135,23 @@ server <- function(input, output) {
                      input$meanY, input$sdY, samplesY())
     })
     
+    ### t-Test Output ###
     output$tTestResults <- renderPrint({
         tTests(samplesX(), samplesY())
     })
     
+    ### ANOVA Output ###
+    output$anovaResults <- renderPrint({
+        anovaResults(samplesX(), samplesY())
+    })
+    
+    ### Linear Regression Output ###
     output$lrPlot <- renderPlot({
         lrPlot(samplesX(), samplesY())
     })
     
     output$lrResults <- renderPrint({
-        lrResults(samplesX(), samplesY())
+        summary(lrResults(samplesX(), samplesY()))
     })
     
 }
