@@ -10,6 +10,10 @@
 library(shiny)
 library(tidyverse)
 
+source("plotTwoNorms.R")
+source("tTests.R")
+source("lrTest.R")
+
 # Define UI for application that draws a histogram
 ui <- fluidPage(
 
@@ -30,12 +34,12 @@ ui <- fluidPage(
         column(4,
             # Inputs for X
             sliderInput("meanX", "X Mean", min=-5, max=5, value=0),
-            sliderInput("sdX", "X Std Dev", min=0.5, max=5, value=1)
+            sliderInput("sdX", "X Std Dev", min=0.5, max=10, value=1)
             ),
         column(4,
             # Inputs for y
             sliderInput("meanY", "Y Mean", min=-5, max=5, value=1),
-            sliderInput("sdY", "Y Std Dev", min=0.5, max=5, value=1)
+            sliderInput("sdY", "Y Std Dev", min=0.5, max=10, value=1)
             ),
         column(4,
                # Number of samples
@@ -48,9 +52,26 @@ ui <- fluidPage(
        be formulated."),
     
     tabsetPanel(
-        tabPanel("t-Test"),
+        tabPanel("t-Test",
+                 p("There are two types of t-tests, pooled and 
+                   Welch's.  The pooled t-test is appropriate when
+                   the population variances are approximately equal and is generally 
+                   robust if there aren't many outliers. Welch's 
+                   test is appropriate if the variances are not equal; 
+                   however it gives the same results as the pooled test 
+                   when the variances and sample sizes are equal. Results 
+                   for a two-sided test with 95% for both methods are
+                   shown below."),
+
+                 verbatimTextOutput("tTestResults")
+                 ),
         tabPanel("ANOVA"),
-        tabPanel("Linear Regression"),
+        tabPanel("Linear Regression",
+                 p("Some words here..."),
+                 
+                 fluidRow(column(6, verbatimTextOutput("lrResults")),
+                          column(6, plotOutput("lrPlot")))
+                 ),
         tabPanel("Bayesian Estimation")
     )
     
@@ -64,26 +85,20 @@ server <- function(input, output) {
     samplesY <- reactive(rnorm(input$n, input$meanY, input$sdY))
     
     output$distPlot <- renderPlot({
-        dfX <- data.frame(lbl = "X",
-                          idx = seq(input$meanX - 3*input$sdX, 
-                                  input$meanX + 3*input$sdX, 
-                                  0.1)) %>%
-            mutate(prob = dnorm(idx, input$meanX, input$sdX))
-        
-        dfY <- data.frame(lbl = "Y",
-                          idx = seq(input$meanY - 3*input$sdY, 
-                                  input$meanY + 3*input$sdY, 
-                                  0.1)) %>%
-            mutate(prob = dnorm(idx, input$meanY, input$sdY))
-        
-        rbind(dfX, dfY) %>%
-            ggplot(aes(colour=lbl)) +
-            geom_line(aes(x=idx, y=prob)) +
-            geom_point(data.frame(lbl="X", x=samplesX()), 
-                       mapping=aes(x=x, y=0)) +
-            geom_point(data.frame(lbl="Y", x=samplesY()), 
-                       mapping=aes(x=x, y=0)) +
-            theme(legend.title=element_blank())
+        plotTwoNorms(input$meanX, input$sdX, samplesX(),
+                     input$meanY, input$sdY, samplesY())
+    })
+    
+    output$tTestResults <- renderPrint({
+        tTests(samplesX(), samplesY())
+    })
+    
+    output$lrPlot <- renderPlot({
+        lrPlot(samplesX(), samplesY())
+    })
+    
+    output$lrResults <- renderPrint({
+        lrResults(samplesX(), samplesY())
     })
     
 }
