@@ -14,6 +14,7 @@ source("plotTwoNorms.R")
 source("tTests.R")
 source("lrTest.R")
 source("anovaTest.R")
+source("bayesEst.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -113,14 +114,16 @@ ui <- fluidPage(
                             
                             verbatimTextOutput("lrResults"),
                             plotOutput("lrPlot")
-                   ),
+                            ),
                    
                    ### Bayesian Estimation ###
-                   tabPanel("Bayesian Estimation")
-               )
+                   tabPanel("Bayesian Estimation",
+                            helpText("Some words here about priors..."),
+                            plotOutput("bayesPlots")
+                            )
+                  )
                )
     )
-  
 )
 
 # Define server logic required to draw a histogram
@@ -154,6 +157,11 @@ server <- function(input, output) {
         summary(lrResults(samplesX(), samplesY()))
     })
     
+    # output$bayesPlots <- renderPlot({
+    #     bayesPlot(samplesX(), samplesY())
+    # })
+    
+
 }
 
 # Run the application 
