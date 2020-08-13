@@ -14,7 +14,11 @@ source("plotTwoNorms.R")
 source("tTests.R")
 source("lrTest.R")
 source("anovaTest.R")
-source("bayesEst.R")
+# This file uses MCMC which can be slow
+#source("bayesEst.R")
+# Use rethinking package and quadratic approximation instead
+source("rethinkBayes.R")
+
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
@@ -119,7 +123,9 @@ ui <- fluidPage(
                    ### Bayesian Estimation ###
                    tabPanel("Bayesian Estimation",
                             helpText("Some words here about priors..."),
-                            plotOutput("bayesPlots")
+                            fluidRow(plotOutput("bayesMeans", height="200px")),
+                            fluidRow(plotOutput("bayesDiff", height="200px")),
+                            verbatimTextOutput("bayesInterval")
                             )
                   )
                )
@@ -157,10 +163,19 @@ server <- function(input, output) {
         summary(lrResults(samplesX(), samplesY()))
     })
     
-    # output$bayesPlots <- renderPlot({
-    #     bayesPlot(samplesX(), samplesY())
-    # })
+    bayesRes <- reactive(quapModels(samplesX(), samplesY()))
     
+    output$bayesInterval <- renderPrint({
+      bayesRes()$credible
+    })
+    
+    output$bayesMeans <- renderPlot({
+        bayesRes()$meansPlt
+    })
+    
+    output$bayesDiff <- renderPlot({
+      bayesRes()$diffPlt
+    })
 
 }
 
