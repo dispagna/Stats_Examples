@@ -11,13 +11,13 @@ quapModels <- function(samplesX, samplesY)
   # Model with non-informative priors
   flist <- alist(
     val ~ dnorm(mu, sigma),
-    mu ~ dnorm(0, 50),
-    sigma ~ dunif(0, 10)
+    mu ~ dnorm(0, 20),
+    sigma ~ dunif(0, 20)
   )
   
   # Quadratic Approximation
-  mdl.X <- quap(flist, data=data.frame(val=samplesX))
-  mdl.Y <- quap(flist, data=data.frame(val=samplesY))
+  mdl.X <- quap(flist, data=data.frame(val=samplesX), start=list(mu=0, sigma=5))
+  mdl.Y <- quap(flist, data=data.frame(val=samplesY), start=list(mu=0, sigma=5))
 
   N <- 1e4
   
@@ -43,20 +43,23 @@ quapModels <- function(samplesX, samplesY)
     labs(x = "Individual Population Means")
   
   # Now get difference of means
-  dfDiff <- rbind(data.frame(type="prior", 
-                       diff=dfPrior$mu[1:N] - dfPrior$mu[(N+1):(2*N)]),
-                  data.frame(type="posterior", 
+  dfDiff <- rbind(data.frame(type="posterior", 
                              diff=dfPost$mu[1:N] - dfPost$mu[(N+1):(2*N)]))
+  
+  credible <- HPDI(dfDiff %>% filter(type=="posterior") %>% select(diff),
+                   prob=0.95)
   
   diffPlt <- dfDiff %>%
     ggplot(mapping=aes(diff, colour=type, fill=type, linetype=type)) +
     geom_density(alpha=0.1) +
+    geom_vline(xintercept=credible, color="blue", linetype="dashed", 
+               show.legend = TRUE) +
     xlim(c(-10, 10)) +
     labs(x = "Difference Between Population Means")
   
   list(meansPlt = meansPlt,
        diffPlt = diffPlt,
-       credible = HPDI(dfDiff$diff, prob=0.95))
+       credible = credible)
     
 }
 

@@ -122,10 +122,25 @@ ui <- fluidPage(
                    
                    ### Bayesian Estimation ###
                    tabPanel("Bayesian Estimation",
-                            helpText("Some words here about priors..."),
+                            helpText("Formulating this as a Bayesian estimation
+                                     problem, let's use the same non-informative 
+                                     prior for both groups:
+                                     \\begin{align*}
+                                        \\gamma &\\sim Normal(\\mu, \\sigma^2) \\\\
+                                        \\mu &\\sim Normal(0, 20^2) \\\\
+                                        \\sigma &\\sim Uniform(0, 20) \\\\
+                                      \\end{align*}"),
+                            helpText("The plots below show the prior and posterior
+                                     for each group mean"),
                             fluidRow(plotOutput("bayesMeans", height="200px")),
-                            fluidRow(plotOutput("bayesDiff", height="200px")),
-                            verbatimTextOutput("bayesInterval")
+                            helpText("Next, draw samples from each posterior
+                                     distribution and take the difference between
+                                     the samples.  The result is the posterior
+                                     distribution for the difference in the 
+                                     group means with a 95% highest posterior 
+                                     density (HPD) credible interval shown below."),
+                            verbatimTextOutput("bayesInterval"),
+                            fluidRow(plotOutput("bayesDiff", height="200px"))
                             )
                   )
                )
