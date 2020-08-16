@@ -13,36 +13,36 @@ library(shiny)
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Old Faithful Geyser Data"),
-
-    # Sidebar with a slider input for number of bins 
-    sidebarLayout(
-        sidebarPanel(
-            sliderInput("bins",
-                        "Number of bins:",
-                        min = 1,
-                        max = 50,
-                        value = 30)
-        ),
-
-        # Show a plot of the generated distribution
-        mainPanel(
-           plotOutput("distPlot")
-        )
+    titlePanel("Simpson's Paradox and Causal Inference"),
+    
+    # General description
+    p("When I first learned about Simpson's paradox, the definition was 
+             straightforward--the conditional odds ratio is reversed from the marginal 
+             odds ratio.  What was puzzling to
+             me was ", em("how"), " to know whether or not to include the covariate
+             in the model. Surely, it couldn't always be correct to include the covariate? 
+             It turns out causal inference is the method for determining whether or not 
+             to include the covariate, or conversely how to determine if the data is
+             consistent with the hypothesized causal model; this is especially important
+             for observational studies."
+      ),
+    p("This is not intended to be a complete explanation of causal inference, but rather
+      just to illustrate that there is more to understanding and untangling
+      Simpson's paradox.  Two great references for a more complete introduction to
+      causal inference are Chapter 5 of McElreath's",
+             tags$a(href="https://www.routledge.com/Statistical-Rethinking-A-Bayesian-Course-with-Examples-in-R-and-STAN/McElreath/p/book/9780367139919","Statistical Rethinking"),
+             "and Pearl, et al's ",
+             tags$a(href="https://www.wiley.com/en-us/Causal+Inference+in+Statistics%3A+A+Primer-p-9781119186847", "Causal Inference in Statistics: A Primer."),
+             "The examples below are taken from Pearl's book."
     )
+
+   
 )
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
 
-    output$distPlot <- renderPlot({
-        # generate bins based on input$bins from ui.R
-        x    <- faithful[, 2]
-        bins <- seq(min(x), max(x), length.out = input$bins + 1)
 
-        # draw the histogram with the specified number of bins
-        hist(x, breaks = bins, col = 'darkgray', border = 'white')
-    })
 }
 
 # Run the application 
