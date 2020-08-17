@@ -7,10 +7,13 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny)
+require(shiny)
+require(visNetwork)
+
+source("./Rsource/SwitchButton.R")
 
 # Define UI for application that draws a histogram
-ui <- fluidPage(
+ui <- fluidPage(theme = "button.css",
 
     # Application title
     titlePanel("Simpson's Paradox and Causal Inference"),
@@ -26,14 +29,25 @@ ui <- fluidPage(
              consistent with the hypothesized causal model; this is especially important
              for observational studies."
       ),
-    p("This is not intended to be a complete explanation of causal inference, but rather
-      just to illustrate that there is more to understanding and untangling
-      Simpson's paradox.  Two great references for a more complete introduction to
+    p("This is not intended to be a complete explanation of causal inference. Rather
+      these examples illustrate there is more to understanding and untangling
+      Simpson's paradox beyond what is often covered in an intro stats course 
+      (especially if that course is focused on designed experiments vs. observational
+      studies). Two great references for a more complete introduction to
       causal inference are Chapter 5 of McElreath's",
              tags$a(href="https://www.routledge.com/Statistical-Rethinking-A-Bayesian-Course-with-Examples-in-R-and-STAN/McElreath/p/book/9780367139919","Statistical Rethinking"),
              "and Pearl, et al's ",
-             tags$a(href="https://www.wiley.com/en-us/Causal+Inference+in+Statistics%3A+A+Primer-p-9781119186847", "Causal Inference in Statistics: A Primer."),
-             "The examples below are taken from Pearl's book."
+             tags$a(href="https://www.wiley.com/en-us/Causal+Inference+in+Statistics%3A+A+Primer-p-9781119186847", "Causal Inference in Statistics: A Primer.")
+    ),
+    
+    tabsetPanel(tabPanel("Simpson's Paradox",
+                         fluidRow(column(2, switchButton(inputId = "switch",
+                                    label = "Include Covariate",
+                                    value = TRUE, col = "GB", type = "YN")),
+                                  column(10, p("Some text here"))
+                         )
+                ),
+                tabPanel("Dagitty")
     )
 
    
