@@ -1,22 +1,31 @@
 
-
-oddsratio <- function(x)
+createDF <- function(covariate)
 {
+  df <- as.table(array(c(1920, 710, 550, 250, 810, 60, 2340, 360), dim=c(2,2,2),
+                       dimnames=list(c("recovered", "died"),
+                                     c("Drug", "No Drug"),
+                                     covariate)))
+  return(df)
+}
+
+oddsratio <- function(x, prob=0.95)
+{
+  alpha <- 1-prob
   OR <- (x[1,1]*x[2,2])/ (x[2,1]*x[1,2])
   seLogOR <- sqrt(1/x[1,1] + 1/x[1,2] + 1/x[2,1] + 1/x[2,2])
-  lowerOR <- OR*exp(-1.96 * seLogOR)
-  upperOR <- OR*exp(1.96 * seLogOR)
-  return(list(OR = OR,
-         lwr = lowerOR,
-         upr = upperOR))
+  lowerOR <- OR*exp(qnorm(alpha/2) * seLogOR)
+  upperOR <- OR*exp(-qnorm(alpha/2) * seLogOR)
+  res <- c(OR, lowerOR, upperOR)
+  names(res) <- c("OR", "lwr", "upr")
+  return(res)
   
 }
 
 allORs <- function(x)
 {
-  marginalOR <- oddsratio(margin.table(x,c(1,2)))
+  marginal <- oddsratio(margin.table(x,c(1,2)))
   condORs <- apply(x, 3, oddsratio)
-  return(append(marginalOR, condORs))
+  return(rbind(marginal, t(condORs)))
 }
 
 testMarginalIndependence <- function(x)
