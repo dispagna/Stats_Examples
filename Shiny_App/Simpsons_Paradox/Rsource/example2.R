@@ -1,12 +1,12 @@
 require(dagitty)
 require(visNetwork)
 
-source("./Shiny_App/Simpsons_Paradox/Rsource/helperFunctions.R")
+source("./Rsource/helperFunctions.R")
 
 simpsonsEx2 <- function()
 {
   
-  df <- createDF(eval(parse(text = "c(\"unpaid\", \"paid\")")))
+  df <- createDF(eval(parse(text = "c(\"Unpaid\", \"Paid\")")))
   
   allORs(df)
   
@@ -21,15 +21,18 @@ simpsonsEx2 <- function()
   
   # visNetwork
   nodes <- data.frame(id = 1:3,
-                      label = c("drug", "paid", "recover"),
-                      shape = "circle",
+                      label = c("Drug", "Paid", "Recovered"),
+                      shape = "ellipse",
                       color = "lightblue")
   
   edges <- data.frame(from = c(1, 1, 3), to = c(3, 2, 2),
                       color = c("darkblue", "red", "red"),
                       arrows="to")
   
-  visNetwork(nodes,edges) %>%
+  vis <- visNetwork(nodes,edges) %>%
     visLayout(randomSeed = 12)
+  
+  list(tbl = data.frame(df),
+       vis = vis)
 }
 

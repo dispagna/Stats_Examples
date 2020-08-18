@@ -9,8 +9,11 @@
 
 require(shiny)
 require(visNetwork)
+#require(DT)
 
 source("./Rsource/SwitchButton.R")
+source("./Rsource/example1.R")
+source("./Rsource/example2.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(theme = "button.css",
@@ -41,10 +44,15 @@ ui <- fluidPage(theme = "button.css",
     ),
     
     tabsetPanel(tabPanel("Simpson's Paradox",
-                         fluidRow(column(2, switchButton(inputId = "switch",
-                                    label = "Include Covariate",
-                                    value = TRUE, col = "GB", type = "YN")),
-                                  column(10, p("Some text here"))
+                         fluidRow(column(10, p("Some text here")),
+                                  column(2, switchButton(inputId = "toggle",
+                                                         label = "Include Covariate",
+                                                         value = TRUE, col = "GB", type = "YN"))
+                         ),
+                         fluidRow(column(6, 
+                                         helpText("Some words here."),
+                                         visNetworkOutput("dag")),
+                                  column(6, tableOutput("dataTable"))
                          )
                 ),
                 tabPanel("Dagitty")
@@ -56,7 +64,15 @@ ui <- fluidPage(theme = "button.css",
 # Define server logic required to draw a histogram
 server <- function(input, output) {
 
+    res <- reactive(if (input$toggle) simpsonsEx1() else simpsonsEx2())
 
+    output$dataTable <- renderTable({
+        res()$tbl
+    })
+
+    output$dag <- renderVisNetwork(({
+        res()$vis
+    }))
 }
 
 # Run the application 

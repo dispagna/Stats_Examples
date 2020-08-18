@@ -1,12 +1,12 @@
 require(dagitty)
 require(visNetwork)
 
-source("./Shiny_App/Simpsons_Paradox/Rsource/helperFunctions.R")
+source("./Rsource/helperFunctions.R")
 
-simpsonsEx1 <- function(covariate)
+simpsonsEx1 <- function()
 {
 
-  df <- createDF(eval(parse(text = "c(\"insured\", \"uninsured\")")))
+  df <- createDF(eval(parse(text = "c(\"Insured\", \"Uninsured\")")))
 
   allORs(df)
   
@@ -21,14 +21,17 @@ simpsonsEx1 <- function(covariate)
   
   # visNetwork
   nodes <- data.frame(id = 1:3,
-                      label = c("drug", "insured", "recover"),
-                      shape = "circle",
+                      label = c("Drug", "Insured", "Recovered"),
+                      shape = "ellipse",
                       color = "lightblue")
   
   edges <- data.frame(from = c(1, 2, 2), to = c(3, 1, 3),
                       color = c("darkblue", "red", "red"),
                       arrows="to")
   
-  visNetwork(nodes,edges) %>%
+  vis <- visNetwork(nodes,edges) %>%
     visLayout(randomSeed = 12)
+  
+  list(tbl = data.frame(df),
+       vis = vis)
 }
