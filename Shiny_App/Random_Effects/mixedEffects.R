@@ -1,4 +1,4 @@
-library(nlme)
+require(lme4)
 
 source("./bindSamples.R")
 

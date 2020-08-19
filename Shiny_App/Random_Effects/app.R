@@ -7,7 +7,7 @@
 #    http://shiny.rstudio.com/
 #
 
-library(shiny)
+require(shiny)
 source("fixedEffects.R")
 source("mixedEffects.R")
 
