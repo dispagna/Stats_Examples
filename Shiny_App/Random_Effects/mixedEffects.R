@@ -18,6 +18,7 @@ plotRandom <- function(samplesX, samplesY, samplesZ,
     geom_point(data.frame(lbl="Raisin Bran", x=samplesZ), 
                mapping=aes(x=x, y=0)) +
     geom_line(data=df, mapping=aes(x=idx, y=prob), linetype="dashed") +
+    theme(legend.title=element_blank()) +
     labs(x = "Sugar (g)", y="Probability")
   
 }

@@ -17,19 +17,37 @@ ui <- fluidPage(
     # Application title
     titlePanel("Fixed vs. Random Effects"),
     
-    p("Some stuff here..."),
+    p("I really struggled with understanding at a conceptual level what the differences were
+      between fixed and random effects when first introduced to the concepts in a Design of
+      Experiments course. In this example, I try to give a more intuitive understanding of 
+      the differences between the two."),
+    p("Imagine you've bought multiple boxes of three brands of cereal--Cheerios, Froot Loops
+      and Raisin Bran. Further, imagine you have a device that can measure the actual
+      sugar content per serving in each box (as opposed to the value on the
+      nutritional label). You could do either a fixed effect or a random effect ANOVA on
+      the measured sugar content data. Which do you choose to do and why?"),
     
-    radioButtons("fixedEffect", label=NULL, inline=TRUE,
-                 choiceNames = c("Fixed", "Random"), choiceValues = c(TRUE, FALSE)),
-
-    fluidRow(column(3,sliderInput("sdCheerios", "Cheerios", min=1, max=4, value=2, step=0.1),
-                               sliderInput("sdFrootLoops", "Froot Loops", min=1, max=4, value=2, step=0.1),
-                               sliderInput("sdRaisinBran", "Raisin Bran", min=1, max=4, value=2, step=0.1),
+    fluidRow(column(3, radioButtons("fixedEffect", label=NULL, inline=TRUE,
+                 choiceNames = c("Fixed", "Random"), choiceValues = c(TRUE, FALSE))),
+             column(9, uiOutput("question")),
+             ),
+    
+    fluidRow(hr()),
+    
+    fluidRow(column(3,p()),
+             column(9, uiOutput("details"))
+             ),
+    
+    fluidRow(column(3, helpText("Adjust the standard deviation within brand or number of boxes below."),
+                    sliderInput("sdCheerios", "Cheerios", min=1, max=4, value=4, step=0.1),
+                               sliderInput("sdFrootLoops", "Froot Loops", min=1, max=4, value=4, step=0.1),
+                               sliderInput("sdRaisinBran", "Raisin Bran", min=1, max=4, value=4, step=0.1),
                                sliderInput("n", "Number of Boxes per Brand", min=3, max=15, value=5, step=1)),
              column(9,plotOutput("distPlot", height = "200px"),
+                    helpText("ANOVA Output"),
                       verbatimTextOutput("aov"))),
     
-    p("Some more stuff here...")
+    textOutput("explanation")
     
 )
 
@@ -50,6 +68,40 @@ server <- function(input, output) {
                                 samplesFrootLoops(), 
                                 samplesRaisinBran())
     )
+    
+    output$question <- renderUI({
+        if(input$fixedEffect)
+            HTML(paste(
+            "Treating Brand as a fixed effect means you are asking the question ",
+            "<B>Is there
+             a statistically significant difference in the average sugar content per
+             serving between Cheerios, Froot Loops and Raisin Bran?</B>"
+            ))
+        else
+            HTML(paste(
+                "Treating Brand as a random effect means you are asking the question ",
+                "<B>How much of the variance in sugar content for <i>all</i> cereal brands 
+                is due to variation within each brand versus variation between brands?</B>"
+            ))    
+        })
+    
+    output$details <- renderUI({
+        if(input$fixedEffect)
+            HTML(paste(
+                "Observe that with a small number of samples and large variance for sugar content
+            for each brand it is difficult to determine whether or not there is a difference.
+            As you increase the sample size and decrease the variance it becomes easier to
+            see that the mean sugar content is significantly different between the three brands."
+            ))
+        else
+            HTML(paste(
+                "In the ANOVA output, the Brand random effect is the variance
+                <i>between</i> brands and the Residuals random effect is the variance
+                <i>within</i> brands. Also, notice the fixed effect Intercept term
+                at the very bottom of the ANOVA output--
+                that is the estimated mean sugar content for all brands of cereal."
+            ))    
+    })
     
     output$distPlot <- renderPlot({ 
         if (input$fixedEffect)
