@@ -2,21 +2,21 @@ library(tidyverse)
 
 bindSamples <- function(samplesX, samplesY)
 {
-  df <- rbind(data.frame(label = "X",
-                         values = samplesX,
-                         idx = 0),
-              data.frame(label = "Y",
-                         values = samplesY,
-                         idx = 1)) 
+  df <- rbind(data.frame(idx = "X",
+                         values = samplesX),
+              data.frame(idx = "Y",
+                         values = samplesY)) 
 }
 
 lrPlot <- function(samplesX, samplesY)
 {
   
   bindSamples(samplesX, samplesY) %>%
-    ggplot(aes(x=idx, y=values, colour=label, group=1)) +
+    ggplot(aes(x=idx, y=values, colour=idx, group=1)) +
     geom_point() +
-    geom_smooth(method="lm")
+    geom_smooth(method="lm") +
+    theme(legend.title = element_blank()) +
+    labs(x="Group")
 }
 
 lrResults <- function(samplesX, samplesY)
