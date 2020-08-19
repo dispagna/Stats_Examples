@@ -1,4 +1,5 @@
 require(lme4)
+require(ggplot2)
 
 source("./bindSamples.R")
 

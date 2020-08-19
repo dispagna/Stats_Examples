@@ -1,4 +1,5 @@
 require(dplyr)
+require(ggplot2)
 source("./bindSamples.R")
 
 plotFixed <- function(meanX, sdX, samplesX,
