@@ -8,13 +8,14 @@
 #
 
 library(shiny)
-source("models.R")
+source("fixedEffects.R")
+source("mixedEffects.R")
 
 # Define UI for application that draws a histogram
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Random vs. Fixed Effects"),
+    titlePanel("Fixed vs. Random Effects"),
     
     p("Some stuff here..."),
     
@@ -45,14 +46,28 @@ server <- function(input, output) {
     samplesFrootLoops <- reactive(rnorm(input$n, meanFrootLoops, input$sdFrootLoops))
     samplesRaisinBran <- reactive(rnorm(input$n, meanRaisinBran, input$sdRaisinBran))
     
-    output$distPlot <- renderPlot({
-        plotSamples(meanCheerios, input$sdCheerios, samplesCheerios(),
-                    meanFrootLoops, input$sdFrootLoops, samplesFrootLoops(),
-                    meanRaisinBran, input$sdRaisinBran, samplesRaisinBran())
-    })
+    res <- reactive(anovaRandom(samplesCheerios(), 
+                                samplesFrootLoops(), 
+                                samplesRaisinBran())
+    )
     
-    output$aov <- renderPrint({
-        summary(anovaResults(samplesCheerios(), samplesFrootLoops(), samplesRaisinBran()))
+    output$distPlot <- renderPlot({ 
+        if (input$fixedEffect)
+            plotFixed(meanCheerios, input$sdCheerios, samplesCheerios(),
+                      meanFrootLoops, input$sdFrootLoops, samplesFrootLoops(),
+                      meanRaisinBran, input$sdRaisinBran, samplesRaisinBran())
+        else
+            plotRandom(samplesCheerios(), samplesFrootLoops(), samplesRaisinBran(),
+                       res()$overallMean, res()$overallVar)
+        })
+        
+    output$aov <- renderPrint({ 
+        if (input$fixedEffect)
+            summary(anovaFixed(samplesCheerios(), samplesFrootLoops(), samplesRaisinBran()))
+        else
+        {
+            summary(res()$mdl)
+        }
     })
 }
 

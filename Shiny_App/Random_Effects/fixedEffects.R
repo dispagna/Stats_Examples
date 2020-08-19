@@ -1,4 +1,6 @@
-plotSamples <- function(meanX, sdX, samplesX,
+source("./bindSamples.R")
+
+plotFixed <- function(meanX, sdX, samplesX,
                          meanY, sdY, samplesY,
                          meanZ, sdZ, samplesZ)
 {
@@ -29,18 +31,10 @@ plotSamples <- function(meanX, sdX, samplesX,
                mapping=aes(x=x, y=0)) +
     geom_point(data.frame(lbl="Raisin Bran", x=samplesZ), 
                mapping=aes(x=x, y=0)) +
-    labs(x = "Sugar (g)", y="Probability", color="Actual")
+    theme(legend.title = element_blank()) +
+    labs(x = "Sugar (g)", y="Probability")
 }
 
-bindSamples <- function(samplesX, samplesY, samplesZ)
-{
-  df <- rbind(data.frame(Brand = "Cheerios",
-                         values = samplesX),
-              data.frame(Brand = "Froot Loops",
-                         values = samplesY),
-              data.frame(Brand = "Raisin Bran",
-                         values = samplesZ)) 
-}
 
 anovaFixed <- function(samplesX, samplesY, samplesZ)
 {
@@ -50,7 +44,3 @@ anovaFixed <- function(samplesX, samplesY, samplesZ)
 
 }
 
-anovaRandom <- function(samplesx, samplesY, samplesZ)
-{
-  df <- bindSamples(samplesX, samplesY, samplesZ)
-}
