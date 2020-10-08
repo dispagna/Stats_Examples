@@ -1,0 +1,308 @@
+---
+title: "Bayes Additive Model Examples"
+author: "Melissa"
+date: "9/28/2020"
+output: pdf_document
+---
+
+This file illustrates additive models in various Bayesian R packages.
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(rstanarm)
+library(rethinking)
+library(bayesplot)
+library(shinystan)
+library(rstan)
+
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+
+options("scipen" = 1, "digits" = 4)
+
+```
+
+
+# Define the Model
+
+Again, we'll use the mtcars data (see plot below), but this time the model is
+
+TBD
+
+```{r echo=FALSE}
+library(datasets)
+data(mtcars)
+
+mtcars %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) +
+  geom_smooth()  
+```
+
+
+```{r echo=FALSE}
+mu <- mtcars %>% select(mpg, disp) %>% colMeans()
+sigma <- mtcars %>% select(mpg, disp) %>% apply(2,sd)
+
+knitr::kable(cbind(mu, sigma), col.names = c("Mean", "Std Dev"))
+  
+```
+
+# Additive model using rstanarm
+
+## Default priors
+
+```{r}
+mdl1 <- stan_gamm4(mpg ~ s(disp, k=4, bs="cr"), 
+                   data = mtcars,
+                   # default adapt_delta = 0.99
+                   # increase to handle warning about divergent transitions
+                   adapt_delta = 0.999, 
+                   cores=2)
+
+prior_summary(mdl1)
+```
+```{r}
+# Diagnostic plots when divergent transitions warning occurs
+#pairs(mdl1)
+```
+
+
+```{r}
+mdl1
+```
+
+```{r}
+posterior_interval(mdl1)
+```
+
+```{r}
+#launch_shinystan(mdl1, ppd=FALSE)
+```
+
+```{r}
+posterior_vs_prior(mdl1)
+```
+
+
+```{r}
+plot_nonlinear(mdl1)
+```
+```{r}
+newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
+
+y_rep <- as.data.frame(t(posterior_linpred(mdl1, newdata=newdata, draws=50))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = mtcars, aes(color=factor(cyl))) 
+```
+
+
+## Defined priors
+
+Set priors rather than using $rstanarm$ default priors.
+
+```{r}
+mdl4 <- stan_glm(mpg ~ disp, data = df,
+                 prior = normal(0,1),
+                 prior_intercept = normal(0,1),
+                 cores=2)
+
+prior_summary(mdl4)
+```
+```{r}
+mdl4
+posterior_interval(mdl4)
+```
+
+These posterior intervals are consistent with the scaled model using the $rethinking$ package as expected.
+
+
+# Linear model using rethinking
+
+## Original data
+
+```{r}
+# Define model
+
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu ~ a + b * (disp - 230.7),
+  a ~ dnorm(30, 10),
+  b ~ dunif(-0.2, 0),
+  sigma ~ dexp(1)
+)
+
+# Sanity check prior predictive distribution
+N <- 100
+a <- rnorm(N, 30, 10)
+b <- runif(N, -0.2, 0)
+
+for (i in 1:N)
+{
+  curve(a[i] + b[i] * (x - 230.7), from=min(mtcars$disp), 
+        to=max(mtcars$disp), add=(i != 1), col=col.alpha("black", 0.2), 
+        ylim=c(0,80))
+}
+```
+```{r results='hide'}
+
+# Fit model
+mdl1 <- map2stan(f,mtcars)
+
+```
+```{r}
+precis(mdl1)
+```
+
+```{r}
+N <- 50
+ppd <- as.data.frame(extract.samples(mdl1, N)) %>%
+  mutate(x_lwr = c(rep(min(mtcars$disp),N)),
+         x_upr = c(rep(max(mtcars$disp), N)),
+         grp = 1:N) %>%
+  pivot_longer(cols=starts_with("x_"), names_to="x", values_to="disp") %>%
+  mutate(y = a + b * (disp - 230.7))
+
+
+ggplot(data=mtcars, mapping=aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) +
+  stat_smooth(method="lm") +
+  geom_line(data=ppd, mapping=aes(x=disp, y=y, group=grp), color="red", alpha=0.2)
+
+```
+
+```{r}
+stancode(mdl1)
+```
+
+
+```{r}
+# Model Diagnostics
+# launch_shinystan(mdl1@stanfit)
+```
+
+## Standardized data
+
+Now, we'll standardize the $mpg$ and $disp$ and then define the model as follows
+
+\begin{align*}
+  y &\sim N(\mu, \sigma) \\
+  \mu &= a + b * x \\
+  a &\sim N(0, 1) \\
+  b &\sim N(0, 1) \\
+  \sigma_e &\sim exp(1) \\
+\end{align*}
+
+
+```{r results='hide'}
+# Standardize 
+df <- as.data.frame(mtcars %>% select(mpg, disp) %>% scale())
+```
+
+```{r}
+# Define model
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu ~ a + b * disp,
+  a ~ dnorm(0,1),
+  b ~ dnorm(0,1),
+  sigma ~ dexp(1)
+)
+
+# Sanity check prior predictive distribution
+N <- 100
+a <- rnorm(N, 0, 1)
+b <- rnorm(N, 0, 1)
+
+for (i in 1:N)
+{
+  curve(a[i] + b[i] * x, from=min(df$disp), to=max(df$disp), 
+        add=(i != 1), col=col.alpha("black", 0.2),
+        ylim=c(-3, 3))
+}
+
+```
+
+
+```{r results='hide'}
+# Fit model
+mdl2 <- map2stan(f,df)
+```
+
+```{r}
+precis(mdl2)
+```
+
+
+```{r}
+# Let's convert back to original scale for comparison
+(a_prime <- mu['mpg'] + sigma['mpg']*coef(mdl2)['a'] - coef(mdl2)['b'] * sigma['mpg'] * mu['disp'] / sigma['disp'])
+(b_prime <- coef(mdl2)['b']*sigma['mpg'] / sigma['disp'])
+```
+The slope is quite close to slope for the unscaled model.
+
+
+
+# Linear model using rstan
+```{r}
+#Below is output from stancode(mdl2)
+
+mdlstan <- 
+  'data{
+      int<lower=1> N;
+      real mpg[N];
+      real disp[N];
+  }
+  parameters{
+      real a;
+      real b;
+      real<lower=0> sigma;
+  }
+  model{
+      vector[N] mu;
+      sigma ~ exponential( 1 );
+      b ~ normal( 0 , 1 );
+      a ~ normal( 0 , 1 );
+      for ( i in 1:N ) {
+          mu[i] = a + b * disp[i];
+      }
+      mpg ~ normal( mu , sigma );
+  }
+  generated quantities{
+      vector[N] mu;
+      for ( i in 1:N ) {
+          mu[i] = a + b * disp[i];
+      }
+  }'
+
+# Below is from stan documentation
+mdlstan2 <-
+  'data {
+    int<lower=1> N;
+    vector[N] mpr;
+    vector[N] disp;
+  }
+  parameters{
+    real a;
+    real b;
+    real<lower=0> sigma;
+  }
+  model{
+    sigma ~ exponential( 1 );
+    b ~ normal( 0 , 1 );
+    a ~ normal( 0 , 1 );
+    mpg ~ normal(a + b * disp, sigma)
+  }'
+
+
+```
+

@@ -1,0 +1,465 @@
+---
+title: "Bayes R Packages Part 1"
+author: "Melissa"
+date: "9/28/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+# Introduction
+
+The first course I took on Bayesian methods focused mostly on theory, and since the course was only one semester there wasn't time to learn about some of the modern software packages that are commonly used for Bayesian analysis.  This blog post serves as a gentle introduction to some of these R packages.
+
+Since most of the people in my stats program were only familiar with R and SAS (and maybe a little Python), I think the following is an easy way to work up to _rstan_ which has a more C-like syntax:
+
+1. rstanarm
+    + Pro: Functions are syntactically very similar to frequentist functions with which users are already familiar.
+    
+    + Pro: Default priors are generally appropriate so the user isn't required to specify priors.
+    
+    + Con: The user isn't required to specify priors (i.e., caveat emptor).
+  
+2. rethinking
+    + Pro: Uses the R formula syntax with which users are already familiar.
+    
+    + Pro: The user is required to specify all priors (i.e., no shortcuts).
+    
+    + Pro: You can get the rstan model out of the rethinking model, so this is a nice bridge between R and stan syntax.
+    
+    + Con: None that I've found yet, other than it's built on top of rstan so some folks might prefer to just go right to the source.  
+  
+3. rstan
+    + Pro: It's the R interface to stan which is the Bayesian MCMC software that runs on multiple platforms and supports multiple languages.
+  
+    + Con: If you aren't familiar with C, Java or C++ then it's a completely new syntax to learn on top of the Bayesian concepts
+  
+# Approach
+
+I will demonstrate the following steps for a simple linear model with each of the R packages:
+
+1. Fit the model
+2. Examine the prior predictive distribution
+3. Examine diagnostics
+4. Examine posterior distribution
+5. Examine the posterior predictive distribution
+
+# Setup Environment
+
+Some basic R environment setup
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(rstanarm)
+library(rethinking)
+library(bayesplot)
+library(shinystan)
+library(rstan)
+#library(tidybayes)
+
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+
+options("scipen" = 1, "digits" = 4)
+```
+
+# Define the Model
+
+I'll use the mtcars dataset in the examples. To keep things simple, I'm just going to model _mpg_ with a single predictor _disp_.
+
+$$mpg = a + b*disp + \epsilon$$
+
+```{r}
+library(datasets)
+data(mtcars)
+head(mtcars)
+```
+
+
+```{r}
+mtcars %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) +
+  stat_smooth(method="lm")
+```
+
+Note that a linear model isn't a great fit to the data--I'll deal with that in the next blog post. This post is focused on the mechanics of how to use each package.
+
+One more thing, let's calculate the mean and standard deviation of both _mpg_ and _disp_.  We'll need this info later.
+
+```{r}
+mu <- mtcars %>% select(mpg, disp) %>% colMeans()
+sigma <- mtcars %>% select(mpg, disp) %>% apply(2,sd)
+
+knitr::kable(cbind(mu, sigma), col.names = c("Mean", "Std Dev"))
+  
+```
+
+# _rstanarm_
+
+We will use the _stan_glm_ function from the _rstanarm_ package for the linear model.  As you'll see, the syntax is very similar to _lm_.
+
+## Default Priors
+
+Let's start with the default priors.  When using the default priors, _stan_glm_ automatically standardizes the parameters so we don't need to do that beforehand. 
+
+### Fit Model
+
+```{r results='hide'}
+mdl1 <- stan_glm(mpg ~ disp, data = mtcars, cores=2)
+```
+
+### Prior Predictive Distribution
+
+We can check whether or not the defaults priors seem reasonable with the prior predictive distribution. The _prior_summary_ function shows the default priors for the model as well as the adjusted priors after automatic scaling.  See http://mc-stan.org/rstanarm/articles/priors.html if you are interested in the details about the default and adjusted priors. 
+
+```{r}
+prior_summary(mdl1)
+```
+
+```{r}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 20, 15),
+                            b = rnorm(N, 0, 0.12))
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D-230.7))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+Two observations from this plot stand out: 1) negative mpg is unrealistic and 2) increasing mpg as displacement increases also seems unlikely in the real-world. Later on I'll choose a more informative prior that incorporates this additional knowledge. But the adjusted default priors aren't totally unreasonable so I'll proceed with the analysis.
+
+### Diagnostics
+
+```{r}
+#launch_shinystan(mdl3, ppd=FALSE)
+```
+
+### Posterior Distribution
+
+The Bayesian posterior point estimates for _a_ and _b_ are shown below.
+```{r}
+coef(mdl1)
+```
+
+The 89% credible intervals for all _a_, _b_ and _sigma_ are shown below. 
+
+```{r}
+knitr::kable(posterior_interval(mdl1, prob=0.89))
+```
+
+### Posterior Predictive Distribution
+
+Finally, let's check the posterior predictive distribution.
+
+```{r}
+newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
+
+y_rep <- as.data.frame(t(posterior_linpred(mdl1, newdata=newdata, draws=20))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = mtcars, aes(color=factor(cyl))) 
+```
+
+Given our assumption of a linear model (which we already know isn't really appropriate for this data), the resulting posterior predictive distribution is consistent with the observed data.
+
+## User-Specified Priors
+
+This time I'll specify priors instead of using the defaults.  But first, I'll standardize both _mpg_ and _disp_.
+
+```{r results='hide'}
+# Standardize
+df <- data.frame(mtcars %>% select(mpg, disp) %>% scale())
+df['cyl'] = mtcars$cyl
+
+mdl2 <- stan_glm(mpg ~ disp, data = df,
+                 prior = normal(0,1/sqrt(2)), # prior for slope
+                 prior_intercept = normal(0,1/sqrt(2)), # prior for intercept
+                 cores=2)
+```
+
+### Prior Predictive Distribution {#rstanarm_prior}
+
+Again, let's do a sanity check with the prior predictive distribution.
+
+```{r}
+prior_summary(mdl2)
+```
+
+```{r}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 0, 1/sqrt(2)),
+                            b = rnorm(N, 0, 1/sqrt(2)))
+
+D <- seq(min(df$disp), max(df$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+Remember, I standardized _mpg_ & _disp_ so that's why the scales are different in this plot. Also, the negative values of _mpg_ aren't necessarily unrealistic after standardization.  However, we still observere the unrealistic situations where _mpg_ increases as _disp_ increases. This is because the prior I chose for _b_ is still symmetric about 0.  In a later example, I'll choose yet another prior for _b_ that is even further refined based on real-world information.
+
+
+### Diagnostics
+
+### Posterior Distribution
+
+Let's check the posterior estimates:
+
+```{r}
+mdl2
+```
+
+And the 89% posterior credible intervals:
+
+```{r}
+posterior_interval(mdl2, prob=0.89)
+```
+
+The above are standardized, so let's convert back to the orginal scale and compare to the results using the defaults priors.
+
+```{r}
+a_prime <- mu['mpg'] + sigma['mpg']*coef(mdl2)[1] - coef(mdl2)[2] * sigma['mpg'] * mu['disp'] / sigma['disp']
+b_prime <- coef(mdl2)[2]*sigma['mpg'] / sigma['disp']
+
+knitr::kable(cbind(coef(mdl1), c(a_prime, b_prime)), 
+             col.names = c("Default", "User-Specified"))
+```
+
+Voila! The results are very similar as expected.
+
+### Posterior Predictive Distribution
+
+Finally, let's check the posterior predictive distribution using the _posterior_linepred_ function.
+
+```{r}
+newdata <- data.frame(disp=seq(min(df$disp), max(df$disp)))
+
+y_rep <- as.data.frame(t(posterior_linpred(mdl2, newdata=newdata, draws=20))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = df, aes(color=factor(cyl))) 
+```
+
+And again, the results are consistent with our assumptions and expectations.
+
+# _rethinking_
+
+## Original data
+
+Again, I'll start with the original data. First, define the model as shown below. Note that the _rethinking_ package requires you to define all priors--there are no defaults. I'll use the same priors for _a_ and _sigma_ as _rstanarm's_ adjusted default priors, but now I'll use a uniform[-0.1, 0] prior for _b_.
+
+```{r}
+# Define model
+
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu ~ a + b * (disp - 230.7),
+  a ~ dnorm(20, 10),
+  b ~ dunif(-0.1, 0),
+  sigma ~ dexp(0.17)
+)
+```
+
+
+```{r results='hide'}
+
+# Fit model
+mdl3 <- map2stan(f,mtcars)
+
+```
+
+### Prior Predictive Distribution
+
+You'll see the effect of my choice of priors in the prior predictive distribution plot below.
+
+```{r}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 25, 15),
+                            b = runif(N, -0.1, 0))
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+Note that now all of the slopes are non-positive. This reflects my prior belief that _mpg_ cannot increase as _disp_ increases. 
+
+### Diagnostics
+
+### Posterior Distribution
+
+The _precis_ function from the _rethinking_ package gives us the point estimate, credible intervals and some additional information.
+
+```{r}
+precis(mdl3)
+```
+
+### Posterior Predictive Distribution
+
+Finally, we check the posterior predictive distribution using the _extract.samples_ function.
+
+```{r}
+N <- 20
+ppd <- as.data.frame(extract.samples(mdl3, N)) %>%
+  mutate(x_lwr = c(rep(min(mtcars$disp),N)),
+         x_upr = c(rep(max(mtcars$disp), N)),
+         grp = 1:N) %>%
+  pivot_longer(cols=starts_with("x_"), names_to="x", values_to="disp") %>%
+  mutate(y = a + b * (disp - 230.7))
+
+
+ggplot(data=mtcars, mapping=aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) +
+  geom_line(data=ppd, mapping=aes(x=disp, y=y, group=grp), color="black", alpha=0.2)
+
+```
+
+
+## Standardized data
+
+Now, we'll standardize the $mpg$ and $disp$ and then define the model as follows
+
+\begin{align*}
+  y &\sim N(\mu, \sigma) \\
+  \mu &= a + b * x \\
+  a &\sim N(0, 1) \\
+  b &\sim N(0, 1) \\
+  \sigma_e &\sim exp(1) \\
+\end{align*}
+
+
+```{r results='hide'}
+# Standardize 
+df <- as.data.frame(mtcars %>% select(mpg, disp) %>% scale())
+df['cyl'] <- mtcars$cyl
+
+# Define model
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu ~ a + b * disp,
+  a ~ dnorm(0,0.7), # map2stan doesn't like 1/sqrt(2) here so I use 0.7 instead
+  b ~ dnorm(0,0.7),
+  sigma ~ dexp(1)
+)
+
+# Fit model
+mdl4 <- map2stan(f,df)
+```
+
+### Prior Predictive Distribution
+
+Same as [_rstanarm_ prior predictive distribution.](#rstanarm_prior)
+
+### Posterior Distribution
+
+```{r}
+precis(mdl4)
+```
+
+Again, let's convert back to the original scale for comparison.
+
+```{r}
+# Let's convert back to original scale for comparison
+a_prime <- mu['mpg'] + sigma['mpg']*coef(mdl4)['a'] - coef(mdl4)['b'] * sigma['mpg'] * mu['disp'] / sigma['disp']
+b_prime <- coef(mdl4)['b']*sigma['mpg'] / sigma['disp']
+
+knitr::kable(cbind(coef(mdl3)[1:2], c(a_prime, b_prime)), 
+             col.names = c("Default", "User-Specified"))
+```
+
+# _rstan_ 
+
+# Linear model using rstan
+```{r}
+#Below is output from stancode(mdl2)
+
+mdlstan <- 
+  'data{
+      int<lower=1> N;
+      real mpg[N];
+      real disp[N];
+  }
+  parameters{
+      real a;
+      real b;
+      real<lower=0> sigma;
+  }
+  model{
+      vector[N] mu;
+      sigma ~ exponential( 1 );
+      b ~ normal( 0 , 1 );
+      a ~ normal( 0 , 1 );
+      for ( i in 1:N ) {
+          mu[i] = a + b * disp[i];
+      }
+      mpg ~ normal( mu , sigma );
+  }
+  generated quantities{
+      vector[N] mu;
+      for ( i in 1:N ) {
+          mu[i] = a + b * disp[i];
+      }
+  }'
+
+# Below is from stan documentation
+mdlstan2 <-
+  'data {
+    int<lower=1> N;
+    vector[N] mpr;
+    vector[N] disp;
+  }
+  parameters{
+    real a;
+    real b;
+    real<lower=0> sigma;
+  }
+  model{
+    sigma ~ exponential( 1 );
+    b ~ normal( 0 , 1 );
+    a ~ normal( 0 , 1 );
+    mpg ~ normal(a + b * disp, sigma)
+  }'
+
+
+```
+
