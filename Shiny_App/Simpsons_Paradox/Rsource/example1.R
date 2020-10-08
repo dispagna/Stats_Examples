@@ -32,6 +32,9 @@ simpsonsEx1 <- function()
   vis <- visNetwork(nodes,edges) %>%
     visLayout(randomSeed = 12)
   
-  list(tbl = data.frame(df),
+  tmp <- data.frame(df)
+  colnames(tmp) = c("Outcome", "Var1", "Var2", "Freq")
+  
+  list(tbl = tmp,
        vis = vis)
 }
