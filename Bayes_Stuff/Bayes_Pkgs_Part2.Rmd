@@ -1,11 +1,22 @@
 ---
-title: "Bayes Additive Model Examples"
+title: "Bayes R Packages Part 1"
 author: "Melissa"
-date: "9/28/2020"
-output: pdf_document
+date: "10/25/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
 ---
 
-This file illustrates additive models in various Bayesian R packages.
+# Introduction
+
+In Part 1, I skipped over model diagnostics so I'm going to address that in this post. I'll demonstrate _bayesplot_ functions here, but _shinystan_ is a nice, interactive alternative.
+
+# Setup Environment
+
+Recall that we're looking at the following model for the _mtcars_ data set:
+
+$$mpg = a + b*disp + \epsilon$$
 
 ```{r results='hide', message=FALSE, warning=FALSE}
 rm(list=ls())
@@ -14,295 +25,87 @@ library(tidyverse)
 library(rstanarm)
 library(rethinking)
 library(bayesplot)
-library(shinystan)
+library(ggplot2)
 library(rstan)
+#library(tidybayes)
 
-knitr::opts_chunk$set(out.width = "50%")
+#knitr::opts_chunk$set(out.width = "50%")
 knitr::opts_chunk$set(fig.align = "center")
 knitr::opts_chunk$set(message=FALSE)
 knitr::opts_chunk$set(warning=FALSE)
 
 options("scipen" = 1, "digits" = 4)
 
-```
-
-
-# Define the Model
-
-Again, we'll use the mtcars data (see plot below), but this time the model is
-
-TBD
-
-```{r echo=FALSE}
 library(datasets)
 data(mtcars)
-
-mtcars %>%
-  ggplot(aes(x=disp, y=mpg)) +
-  geom_point(aes(color=factor(cyl))) +
-  geom_smooth()  
 ```
 
+# Package _rstanarm_
 
-```{r echo=FALSE}
-mu <- mtcars %>% select(mpg, disp) %>% colMeans()
-sigma <- mtcars %>% select(mpg, disp) %>% apply(2,sd)
+I'll demonstrate first using the model generated from _stan_glm_ with default priors.
 
-knitr::kable(cbind(mu, sigma), col.names = c("Mean", "Std Dev"))
+```{r results='hide'}
+mdl1 <- stan_glm(mpg ~ disp, data = mtcars)
+```
+
+Once the model has been fit, we can use either _as.matrix_ or _as.array_ to extract the posterior draws.  The key difference is that _as.array_ keeps the chains separate.
+
+```{r}
+post <- as.array(mdl1)
+str(post)
+```
+Note that the default is four chains; we can specify the number of chains with the _chains=_ argument in _stan_glm_.
+
+## Trace Plots with _bayesplot_
+
+The _bayesplot_ package provides the function _mcmc_trace_ which plots the MCMC draws.
+
+```{r}
+mcmc_trace(post, pars=c("disp", "sigma"))
+```
+There are three things we are looking for in the trace plot of each chain:
+
+  1. *Good mixing* -  In other words, the chain is rapidly changing values across the full region versus getting "stuck" near a particular value and slowly changing.
   
-```
+  2. *Stationarity* - The mean of the chain is relatively stable.
+  
+  3. *Convergence* - All of the chains spend most of the time around the same high-probability value.
+    
+The trace plots above look good.  However, sometimes it can be hard to tell when there are multiple chains overlaid on the same plot, so two alternatives are shown below.
 
-# Additive model using rstanarm
+## Trace Rank Plots with _rethinking_
 
-## Default priors
-
-```{r}
-mdl1 <- stan_gamm4(mpg ~ s(disp, k=4, bs="cr"), 
-                   data = mtcars,
-                   # default adapt_delta = 0.99
-                   # increase to handle warning about divergent transitions
-                   adapt_delta = 0.999, 
-                   cores=2)
-
-prior_summary(mdl1)
-```
-```{r}
-# Diagnostic plots when divergent transitions warning occurs
-#pairs(mdl1)
-```
-
+One alternative is to use the _trankplot_ function from the _rethinking_ package.  This function plots a trace rank plot which is the distribution of the ranked samples.
 
 ```{r}
-mdl1
+# Note that I specify the $stanfit parameter from the stan_glm object
+trankplot(mdl1$stanfit, pars=c("disp", "sigma"))
 ```
 
-```{r}
-posterior_interval(mdl1)
-```
+## Trace Plots with _ggplot2_
+
+Another alternative is to manually plot each chain separately.  Here's one way to do it with _ggplot2_.
 
 ```{r}
-#launch_shinystan(mdl1, ppd=FALSE)
-```
+library(gridExtra)
 
-```{r}
-posterior_vs_prior(mdl1)
-```
+pars <- c("disp", "sigma")
 
-
-```{r}
-plot_nonlinear(mdl1)
-```
-```{r}
-newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
-
-y_rep <- as.data.frame(t(posterior_linpred(mdl1, newdata=newdata, draws=50))) %>%
-  cbind(newdata) %>%
-  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
-
-y_rep %>%
-  ggplot(aes(x=disp, y=mpg)) +
-  geom_line(aes(group=grp), alpha=0.2) +
-  geom_point(data = mtcars, aes(color=factor(cyl))) 
-```
-
-
-## Defined priors
-
-Set priors rather than using $rstanarm$ default priors.
-
-```{r}
-mdl4 <- stan_glm(mpg ~ disp, data = df,
-                 prior = normal(0,1),
-                 prior_intercept = normal(0,1),
-                 cores=2)
-
-prior_summary(mdl4)
-```
-```{r}
-mdl4
-posterior_interval(mdl4)
-```
-
-These posterior intervals are consistent with the scaled model using the $rethinking$ package as expected.
-
-
-# Linear model using rethinking
-
-## Original data
-
-```{r}
-# Define model
-
-f <- alist(
-  mpg ~ dnorm(mu, sigma),
-  mu ~ a + b * (disp - 230.7),
-  a ~ dnorm(30, 10),
-  b ~ dunif(-0.2, 0),
-  sigma ~ dexp(1)
-)
-
-# Sanity check prior predictive distribution
-N <- 100
-a <- rnorm(N, 30, 10)
-b <- runif(N, -0.2, 0)
-
-for (i in 1:N)
+plts <- list()
+for (par in pars)
 {
-  curve(a[i] + b[i] * (x - 230.7), from=min(mtcars$disp), 
-        to=max(mtcars$disp), add=(i != 1), col=col.alpha("black", 0.2), 
-        ylim=c(0,80))
-}
-```
-```{r results='hide'}
+  df <- as.data.frame(post[,,par]) %>%
+    mutate(iteration = row_number()) %>%
+    pivot_longer(cols=c(-"iteration"), values_to="value", names_to="chain")
 
-# Fit model
-mdl1 <- map2stan(f,mtcars)
-
-```
-```{r}
-precis(mdl1)
-```
-
-```{r}
-N <- 50
-ppd <- as.data.frame(extract.samples(mdl1, N)) %>%
-  mutate(x_lwr = c(rep(min(mtcars$disp),N)),
-         x_upr = c(rep(max(mtcars$disp), N)),
-         grp = 1:N) %>%
-  pivot_longer(cols=starts_with("x_"), names_to="x", values_to="disp") %>%
-  mutate(y = a + b * (disp - 230.7))
-
-
-ggplot(data=mtcars, mapping=aes(x=disp, y=mpg)) +
-  geom_point(aes(color=factor(cyl))) +
-  stat_smooth(method="lm") +
-  geom_line(data=ppd, mapping=aes(x=disp, y=y, group=grp), color="red", alpha=0.2)
-
-```
-
-```{r}
-stancode(mdl1)
-```
-
-
-```{r}
-# Model Diagnostics
-# launch_shinystan(mdl1@stanfit)
-```
-
-## Standardized data
-
-Now, we'll standardize the $mpg$ and $disp$ and then define the model as follows
-
-\begin{align*}
-  y &\sim N(\mu, \sigma) \\
-  \mu &= a + b * x \\
-  a &\sim N(0, 1) \\
-  b &\sim N(0, 1) \\
-  \sigma_e &\sim exp(1) \\
-\end{align*}
-
-
-```{r results='hide'}
-# Standardize 
-df <- as.data.frame(mtcars %>% select(mpg, disp) %>% scale())
-```
-
-```{r}
-# Define model
-f <- alist(
-  mpg ~ dnorm(mu, sigma),
-  mu ~ a + b * disp,
-  a ~ dnorm(0,1),
-  b ~ dnorm(0,1),
-  sigma ~ dexp(1)
-)
-
-# Sanity check prior predictive distribution
-N <- 100
-a <- rnorm(N, 0, 1)
-b <- rnorm(N, 0, 1)
-
-for (i in 1:N)
-{
-  curve(a[i] + b[i] * x, from=min(df$disp), to=max(df$disp), 
-        add=(i != 1), col=col.alpha("black", 0.2),
-        ylim=c(-3, 3))
+  plts[[par]] <- df %>%
+    ggplot() +
+    geom_line(mapping=aes(x=iteration, y=value), color="blue") +
+    facet_wrap(~chain, ncol=1) +
+    labs(title=par)
 }
 
+grid.arrange(grobs=plts, nrow=1)
 ```
 
-
-```{r results='hide'}
-# Fit model
-mdl2 <- map2stan(f,df)
-```
-
-```{r}
-precis(mdl2)
-```
-
-
-```{r}
-# Let's convert back to original scale for comparison
-(a_prime <- mu['mpg'] + sigma['mpg']*coef(mdl2)['a'] - coef(mdl2)['b'] * sigma['mpg'] * mu['disp'] / sigma['disp'])
-(b_prime <- coef(mdl2)['b']*sigma['mpg'] / sigma['disp'])
-```
-The slope is quite close to slope for the unscaled model.
-
-
-
-# Linear model using rstan
-```{r}
-#Below is output from stancode(mdl2)
-
-mdlstan <- 
-  'data{
-      int<lower=1> N;
-      real mpg[N];
-      real disp[N];
-  }
-  parameters{
-      real a;
-      real b;
-      real<lower=0> sigma;
-  }
-  model{
-      vector[N] mu;
-      sigma ~ exponential( 1 );
-      b ~ normal( 0 , 1 );
-      a ~ normal( 0 , 1 );
-      for ( i in 1:N ) {
-          mu[i] = a + b * disp[i];
-      }
-      mpg ~ normal( mu , sigma );
-  }
-  generated quantities{
-      vector[N] mu;
-      for ( i in 1:N ) {
-          mu[i] = a + b * disp[i];
-      }
-  }'
-
-# Below is from stan documentation
-mdlstan2 <-
-  'data {
-    int<lower=1> N;
-    vector[N] mpr;
-    vector[N] disp;
-  }
-  parameters{
-    real a;
-    real b;
-    real<lower=0> sigma;
-  }
-  model{
-    sigma ~ exponential( 1 );
-    b ~ normal( 0 , 1 );
-    a ~ normal( 0 , 1 );
-    mpg ~ normal(a + b * disp, sigma)
-  }'
-
-
-```
 
