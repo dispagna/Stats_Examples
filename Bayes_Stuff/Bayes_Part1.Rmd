@@ -1,0 +1,400 @@
+---
+title: "Bayes R Packages Part 1"
+author: "Melissa"
+date: "11/2/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+# Introduction
+
+The first course I took on Bayesian methods focused mostly on theory, and since the course was only one semester there wasn't time to learn about some of the software packages that are commonly used for Bayesian analysis.  This series of posts serves as an introduction to some of these R packages.
+
+Since most of the people in my stats program were only familiar with R and SAS (and maybe a little Python), I think the following is an easy way to work up to _rstan_ which has a more C-like syntax:
+
+1. rstanarm
+    + Pro: Functions are syntactically very similar to frequentist functions with which users are already familiar.
+    
+    + Pro: Default priors are generally appropriate so the user isn't required to specify priors.
+    
+    + Con: The user isn't required to specify priors (i.e., caveat emptor).
+  
+2. rethinking
+    + Pro: Uses the R formula syntax with which users are already familiar.
+    
+    + Pro: The user is required to specify all priors (i.e., no shortcuts).
+    
+    + Pro: You can get the rstan model out of the rethinking model, so this is a nice bridge between R and stan syntax.
+    
+    + Con: None that I've found yet, other than it's built on top of rstan so some folks might prefer to just go right to the source.  
+  
+3. rstan
+    + Pro: It's the R interface to stan which is the Bayesian MCMC software that runs on multiple platforms and supports multiple languages.
+  
+    + Con: If you aren't familiar with C, Java or C++ then it's a completely new syntax to learn on top of the Bayesian concepts
+  
+# Approach
+
+In general, a Bayesian model analysis includes the following steps:
+
+1. Fit the model
+2. Examine the prior predictive distribution
+3. Examine diagnostics
+4. Examine posterior distribution
+5. Examine the posterior predictive distribution
+
+I will go through these steps in separate posts for each of the previously mentioned packages.  I'll start with _rstanarm_ in this post.
+
+# Setup Environment
+
+First some basic R environment setup
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(rstanarm)
+library(bayesplot)
+library(shinystan)
+library(rstan)
+library(gridExtra)
+#library(tidybayes)
+
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+
+options("scipen" = 1, "digits" = 4)
+
+set.seed(123)
+```
+
+# Define the Model
+
+I'll use the mtcars dataset. To keep things simple, I'll start with a simple linear model with a single predictor:
+
+$$mpg = a + b*disp + \epsilon$$
+
+```{r}
+library(datasets)
+data(mtcars)
+head(mtcars)
+```
+
+
+```{r}
+mtcars %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) +
+  stat_smooth(method="lm")
+```
+
+Clearly a linear model isn't a great fit to the data; a spline would be more appropriate which I'll demonstrate at the end of this post.
+
+Before I start fitting models, I'll calculate the mean and standard deviation of both _mpg_ and _disp_; I'll need this information later.
+
+```{r}
+mu <- mtcars %>% select(mpg, disp) %>% colMeans()
+sigma <- mtcars %>% select(mpg, disp) %>% apply(2,sd)
+
+knitr::kable(cbind(mu, sigma), col.names = c("Mean", "Std Dev"))
+  
+```
+
+# Linear Model with Default Priors
+
+I will use the _stan_glm_ function from the _rstanarm_ package for the linear model.  As you'll see, the syntax is very similar to _lm_.
+
+I'll start with the default priors.  When using the default priors, _stan_glm_ automatically standardizes the parameters so I don't need to do that explicitly. 
+
+## Fit Model
+
+```{r results='hide'}
+mdl1 <- stan_glm(mpg ~ disp, data = mtcars, cores=2)
+```
+
+## Prior Predictive Distribution
+
+Next, I'll examine the prior predictive distribution to see if the default priors seem reasonable.  The _prior_summary_ function shows the default priors for the model as well as the adjusted priors after automatic scaling.  See http://mc-stan.org/rstanarm/articles/priors.html if you are interested in the details about the default and adjusted priors. 
+
+```{r}
+prior_summary(mdl1)
+```
+
+```{r}
+# Plot prior predictive distribution using adjusted priors
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 20, 15),
+                            b = rnorm(N, 0, 0.12))
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D-230.7))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+Two observations from this plot stand out: 1) negative mpg is unrealistic and 2) increasing mpg as displacement increases also seems unlikely in the real-world. Later on I'll choose a more informative prior that incorporates this additional knowledge. But the adjusted default priors aren't totally unreasonable so I'll proceed with the analysis.
+
+## Diagnostics
+
+Once the model has been fit, either _as.matrix_ or _as.array_ extracts the posterior draws.  The key difference is that _as.array_ keeps the chains separate.
+
+```{r}
+post <- as.array(mdl1)
+str(post)
+```
+
+Note that the default is four chains but that can be changed with the _chains=_ argument in _stan_glm_.
+
+### Trace Plots with _bayesplot_
+
+The _bayesplot_ package provides the function _mcmc_trace_ which plots the MCMC draws.
+
+```{r}
+mcmc_trace(post, pars=c("disp", "sigma"))
+```
+There are three things I am looking for in the trace plot of each chain:
+
+  1. *Good mixing* -  In other words, the chain is rapidly changing values across the full region versus getting "stuck" near a particular value and slowly changing.
+  
+  2. *Stationarity* - The mean of the chain is relatively stable.
+  
+  3. *Convergence* - All of the chains spend most of the time around the same high-probability value.
+    
+The trace plots above look good.  However, sometimes it can be hard to tell when there are multiple chains overlaid on the same plot, so two alternatives are shown below.
+
+### Trace Plots with _ggplot2_
+
+One alternative is to manually plot each chain separately.  Here's one way to do it with _ggplot2_.
+
+```{r}
+library(gridExtra)
+
+pars <- c("disp", "sigma")
+
+plts <- list()
+for (par in pars)
+{
+  df <- as.data.frame(post[,,par]) %>%
+    mutate(iteration = row_number()) %>%
+    pivot_longer(cols=c(-"iteration"), values_to="value", names_to="chain")
+
+  plts[[par]] <- df %>%
+    ggplot() +
+    geom_line(mapping=aes(x=iteration, y=value), color="blue") +
+    facet_wrap(~chain, ncol=1) +
+    labs(title=par)
+}
+
+grid.arrange(grobs=plts, nrow=1)
+```
+
+### Trace Rank Plot
+
+Another alternative is the _mcmc_rank_overlay_ function.  This function plots a trace rank plot which is the distribution of the ranked samples.
+
+```{r}
+mcmc_rank_overlay(mdl1, pars=c("disp", "sigma"))
+```
+
+### Effective Sample Size
+
+Since MCMC samples are usually correlated, the effective sample size (_n_eff_) is often less than the number of samples. There is no hard and fast rule for what is an acceptable number for _n_eff_. McElreath’s guidance is it depends on what you are trying to estimate. If you are interested mostly in the posterior mean, then n_eff = 200 can be enough. But if you are interested in the tails of the distribution and it’s highly skewed then you’ll need _n_eff_ to be much larger. There are two parameters, _iter_ and _warmup_, which you can adjust in stan_glm (or map2stan or stan itself) if a larger n_eff is needed.
+
+The _summary_ function displays _n_eff_ (and a lot of other information) for the stan_glm object.
+
+```{r}
+summary(mdl1)
+```
+
+## Posterior Distribution
+
+Since the diagnostics look good, now I can examine the posterior distribution. The Bayesian posterior point estimates for _a_ and _b_ are shown below.
+```{r}
+coef(mdl1)
+```
+
+The 89% credible intervals for all _a_, _b_ and _sigma_ are shown below. 
+
+```{r}
+knitr::kable(posterior_interval(mdl1, prob=0.89))
+```
+
+### Posterior Predictive Distribution
+
+Finally, I'll check the posterior predictive distribution.
+
+```{r}
+newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
+
+y_rep <- as.data.frame(t(posterior_linpred(mdl1, newdata=newdata, draws=20))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = mtcars, aes(color=factor(cyl))) 
+```
+
+The resulting posterior predictive distribution is consistent with my assumption of a linear model but a poor fit to the data (as expected).
+
+# Linear Model with User-Specified Priors
+
+This time I'll specify priors instead of using the defaults.  First, I'll standardize both _mpg_ and _disp_ since that will make it a bit easier to choose the priors. This time I'll choose a prior for the slope that is centered at -1 rather than at 0; you'll see the effect in the prior predictive distribution.
+
+```{r results='hide'}
+# Standardize
+df <- data.frame(mtcars %>% select(mpg, disp) %>% scale())
+df['cyl'] = mtcars$cyl
+
+mdl2 <- stan_glm(mpg ~ disp, data = df,
+                 prior = normal(-1,1/sqrt(2)), # prior for slope
+                 prior_intercept = normal(0,1/sqrt(2)), # prior for intercept
+                 cores=2)
+```
+
+### Prior Predictive Distribution {#rstanarm_prior}
+
+Again, I'll do a sanity check with the prior predictive distribution.
+
+```{r}
+prior_summary(mdl2)
+```
+
+```{r}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 0, 1/sqrt(2)),
+                            b = rnorm(N, -1, 1/sqrt(2)))
+
+D <- seq(min(df$disp), max(df$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+Remember, I standardized _mpg_ & _disp_ so that's why the scales are different in this plot. Notice now that most of the time _mpg_ decreases as _disp_ increases; this is because the prior I chose for _b_ is no longer symmetric about 0. I'm using previous knowledge to make the prior more informative.
+
+### Diagnostics
+
+```{r}
+post <- as.array(mdl2)
+mcmc_trace(post, pars=c("disp", "sigma"))
+```
+
+```{r}
+summary(mdl2)
+```
+
+The chains all look good.
+
+### Posterior Distribution
+
+The posterior estimates:
+
+```{r}
+coef(mdl2)
+```
+
+And the 89% posterior credible intervals:
+
+```{r}
+posterior_interval(mdl2, prob=0.89)
+```
+
+Remember the above are standardized, so I'll convert back to the orginal scale and compare to the results using the defaults priors.
+
+```{r}
+a_prime <- mu['mpg'] + sigma['mpg']*coef(mdl2)[1] - coef(mdl2)[2] * sigma['mpg'] * mu['disp'] / sigma['disp']
+b_prime <- coef(mdl2)[2]*sigma['mpg'] / sigma['disp']
+
+knitr::kable(cbind(coef(mdl1), c(a_prime, b_prime)), 
+             col.names = c("Default", "User-Specified"))
+```
+
+The results are very similar; turns out there is enough data that the choice between priors doesn't make much difference.
+
+### Posterior Predictive Distribution
+
+Finally, let's check the posterior predictive distribution using the _posterior_linepred_ function.
+
+```{r}
+newdata <- data.frame(disp=seq(min(df$disp), max(df$disp)))
+
+y_rep <- as.data.frame(t(posterior_linpred(mdl2, newdata=newdata, draws=20))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = df, aes(color=factor(cyl))) 
+```
+
+And again, the results are consistent with the assumptions.  However, the linear assumption is not appropriate, so I'll try a model with splines next.
+
+# Generalized Additive Model
+
+I will use the _stan_gamm4_ function from the _rstanarm_ package for the GAM.  Again, the syntax is very similar to _gamm4_.
+
+```{r results='hide'}
+mdl3 <- stan_gamm4(mpg ~ s(disp, bs="cr", k=7), 
+                   data = mtcars, 
+                   cores=2, 
+                   adapt_delta = 0.99)
+```
+
+## Prior Predictive Distribution
+
+```{r}
+prior_summary(mdl3)
+```
+
+## Diagnostics
+
+```{r}
+post <- as.array(mdl3)
+mcmc_trace(post, regex_pars=c("disp", "sigma"))
+```
+
+```{r}
+summary(mdl3)
+```
+
+## Posterior Predictive Distribution
+
+```{r}
+
+p1 <- plot_nonlinear(mdl3, prob=0.89) +
+  geom_point(mapping=aes(x=disp, y=mpg-mean(mpg), color=factor(cyl)),
+             data=mtcars) +
+  labs(title="GAM", x="disp", y="mpg-mean(mpg)")
+
+p2 <- ggplot(mapping=aes(x=disp, y=mpg-mean(mpg)),
+              data=mtcars) +
+  geom_point(aes(color=factor(cyl)))+
+  stat_smooth(method="loess",
+              level=0.89) +
+  labs(title="LOESS")
+
+grid.arrange(p1, p2)
+```
+
