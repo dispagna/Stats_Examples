@@ -1,0 +1,331 @@
+---
+title: "Bayes R Packages Part 2"
+author: "Melissa"
+date: "11/5/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+# Introduction
+
+In this post, I'll work through the same example in Part 1 using the _rethinking_ package.  Recall that I'm using the mtcars dataset, and I'm interested in a model with response _mpg_ and predictor _disp_.
+
+# Setup Environment
+
+First some basic R environment setup.
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(rethinking)
+library(bayesplot)
+library(shinystan)
+library(rstan)
+library(gridExtra)
+
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+
+options("scipen" = 1, "digits" = 4)
+
+set.seed(123)
+```
+
+```{r}
+library(datasets)
+data(mtcars)
+head(mtcars)
+```
+
+
+```{r}
+mtcars %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) 
+```
+
+
+
+Before I start fitting models, I'll calculate the mean and standard deviation of both _mpg_ and _disp_ since I'll need this information later.
+
+```{r}
+mu <- mtcars %>% select(mpg, disp) %>% colMeans()
+sigma <- mtcars %>% select(mpg, disp) %>% apply(2,sd)
+
+knitr::kable(cbind(mu, sigma), col.names = c("Mean", "Std Dev"))
+```
+
+# Linear Model 
+
+Again I'll start with a linear model even though it clearly isn't going to be a great fit to the data. The _rethinking_ package doesn't have default priors, so I need to explcitly choose them:
+
+\begin{align*}
+  mpg \sim N(\mu, \sigma^2) \\
+  \mu = a + b*disp \\
+  a \sim N(25,10) \\
+  b \sim U(-0.1, 0) \\
+  \sigma \sim Exp(0.2)
+\end{align*}
+
+Note: I defined 
+
+```{r}
+# Define model
+# Note the sign change for mu and b, this seems to be a quirk
+# of map2stan that it didn't like b ~ dunif(-0.1, 0)
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu ~ a - b * (disp - 230.7),
+  a ~ dnorm(25, 10),
+  b ~ dunif(0, 0.1),
+  sigma ~ dexp(0.2)
+)
+```
+
+```{r results='hide'}
+# Fit model
+# Note the default number of chains = 1, so I'm explicitly setting to 4 here
+mdl1 <- map2stan(f,mtcars, chains=4)
+```
+
+## Prior Predictive Distribution
+
+Next, I'll examine the prior predictive distribution to see if the default priors seem reasonable.  
+
+```{r include=FALSE}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- data.frame(a = rnorm(N, 25, 10),
+                            b = runif(N, -0.1, 0))
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] + x[2] * (D))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+```{r}
+# Plot prior predictive distribution
+N <- 100
+
+prior_samples <- as.data.frame(extract.prior(mdl1, n=N))
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+res <- as.data.frame(apply(prior_samples, 1, function(x) x[1] - x[2] * (D))) %>%
+  mutate(disp = D) %>%
+  pivot_longer(cols=c(-"disp"), names_to="iter") 
+
+res %>%
+  ggplot() +
+  geom_line(aes(x=disp, y=value, group=iter), alpha=0.2) +
+  labs(x="disp", y="prior predictive mpg")
+```
+
+The priors look reasonable since I know in the real world _mpg_ must be positive and can't increase as _disp_ increases.
+
+## Diagnostic Plots
+
+### Trace Plots
+
+The _traceplot_ function (equivalent to _mcmc_trac_ in the _bayesplot_ package) plots the MCMC draws.
+
+```{r}
+traceplot(mdl1@stanfit)
+```
+
+Recall that there are three things I am looking for in the trace plot of each chain:
+
+  1. *Good mixing* -  In other words, the chain is rapidly changing values across the full region versus getting "stuck" near a particular value and slowly changing.
+  
+  2. *Stationarity* - The mean of the chain is relatively stable.
+  
+  3. *Convergence* - All of the chains spend most of the time around the same high-probability value.
+    
+The trace plots above look good.  
+
+### Trace Rank Plot
+
+Another alternative is the _trankplot_ function (equivalent to the _mcmc_rank_overlay_ function in the _bayesplot_ package).  
+
+```{r}
+trankplot(mdl1)
+```
+
+### Effective Sample Size
+
+The _trankplot_ function conveniently also displays the effective sample size (_n_eff_).  But the _precis_ function is another way to get that information.
+
+```{r}
+precis(mdl1)
+```
+
+## Posterior Distribution
+
+Since the chains and _n_eff_ look good, I'll examine the posterior distribution next. Again, the _precis_ function gives both the point estimates and credible intervals for _a_, _b_ and _sigma_.
+
+```{r}
+precis(mdl1)
+```
+
+### Posterior Predictive Distribution
+
+Finally, I'll check the posterior predictive distribution. The _postcheck_ function displays a plot for posterior predictive checking.
+
+```{r}
+postcheck(mdl1, window=nrow(mtcars))
+```
+
+Under the hood, the _postcheck_ function uses the _sim_ function which draws samples from the posterior predictive distribution. So I can also use the _sim_ function directly to create the same posterior predictive distribution plot as I did with _rstanarm_ previously.  
+
+```{r}
+library(forcats)
+
+post <- sim(mdl1) %>%
+  apply(2, fivenum) %>%
+  t() %>%
+  as.data.frame()
+
+dat <- mtcars %>%
+  select(c("mpg", "disp")) %>%
+  rownames_to_column(var="car")
+
+cbind(dat, post) %>%
+  ggplot(aes(x=fct_reorder(car, disp))) +
+  geom_boxplot(mapping=aes(ymin=V1, lower=V2, middle=V3, upper=V4, ymax=V5),
+               stat="identity",
+               outlier.shape = NA) +
+  geom_point(mapping=aes(y=mpg), color="red") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+Another useful visualization is the expectation of the posterior predictive distribution (i.e., $\mu$). The _link_ function returns the linear predictor, possibly transformed by the inverse-link function. In this case, the model is a Gaussian likelihood with an identity link function, so the _sim_ and _link_ functions return identical results.
+
+```{r}
+newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
+
+y_rep <- as.data.frame(t(link(mdl1, data=newdata, n=50))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = mtcars, aes(color=factor(cyl))) 
+```
+
+This looks very similar to the results as with the _rstanarm_ package.
+
+# Generalized Additive Model
+
+The linear model is a poor choice for this data, so I'll try a model with splines next. The _stan_gamm4_ function from the _rstanarm_ package fits Bayesian nonlinear (and mixed) models.  Again, the syntax is very similar to _gamm4_.
+
+```{r results='hide'}
+mdl3 <- stan_gamm4(mpg ~ s(disp, bs="cr", k=7), 
+                   data = mtcars, 
+                   cores=2, 
+                   adapt_delta = 0.99)
+```
+
+## Prior Predictive Distribution
+
+Unlike the linear model, it's not as straightforward to manually construct the prior predictive distribution.  Fortunately, _rstanarm_ will automatically generate it for us--we refit the model _without_ conditioning on the data by setting _prior_PD = TRUE_.
+
+```{r results="hide"}
+mdl3_prior_pred <- stan_gamm4(mpg ~ s(disp, bs="cr", k=7), 
+                   data = mtcars, 
+                   cores=2, 
+                   prior_PD = TRUE,
+                   adapt_delta = 0.99)
+```
+
+```{r}
+N <- 50
+
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+
+prior_pred <- data.frame(t(posterior_epred(mdl3_prior_pred,
+                                newdata=data.frame(disp=D),
+                                draws=N)))
+
+tmp <- prior_pred %>%
+  mutate(disp = D)%>%
+  pivot_longer(cols=-"disp", names_to="iter", values_to="mpg") 
+
+tmp %>%
+  ggplot() +
+  geom_line(mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+```
+
+
+## Diagnostic Plots
+
+```{r}
+post <- as.array(mdl3)
+mcmc_trace(post, regex_pars=c("disp", "sigma"))
+```
+
+```{r}
+summary(mdl3)
+```
+
+The chains and _n_eff_ look good.
+
+## Posterior Predictive Distribution
+
+And finally, the posterior predictive distribution:
+
+```{r}
+library(forcats)
+
+post <- posterior_predict(mdl3) %>%
+  apply(2, fivenum) %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column(var="car")
+
+dat <- mtcars %>%
+  select(c("mpg", "disp")) %>%
+  rownames_to_column(var="car")
+
+plyr::join(dat, post, by="car") %>%
+  ggplot(aes(x=fct_reorder(car, disp))) +
+  geom_boxplot(mapping=aes(ymin=V1, lower=V2, middle=V3, upper=V4, ymax=V5),
+               stat="identity",
+               outlier.shape = NA) +
+  geom_point(mapping=aes(y=mpg), color="red") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+And the expectation over the ppd is plotted below, along with a loess curve for comparison. This model is clearly a better fit to the data than the linear model.
+
+```{r}
+
+p1 <- plot_nonlinear(mdl3, prob=0.89) +
+  geom_point(mapping=aes(x=disp, y=mpg-mean(mpg), color=factor(cyl)),
+             data=mtcars) +
+  labs(title="GAM", x="disp", y="mpg-mean(mpg)")
+
+p2 <- ggplot(mapping=aes(x=disp, y=mpg-mean(mpg)),
+              data=mtcars) +
+  geom_point(aes(color=factor(cyl)))+
+  stat_smooth(method="loess",
+              level=0.89) +
+  labs(title="LOESS")
+
+grid.arrange(p1, p2)
+```
+
