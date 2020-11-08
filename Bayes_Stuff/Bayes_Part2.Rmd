@@ -80,7 +80,7 @@ Note: I defined
 # of map2stan that it didn't like b ~ dunif(-0.1, 0)
 f <- alist(
   mpg ~ dnorm(mu, sigma),
-  mu ~ a - b * (disp - 230.7),
+  mu <- a - b * (disp - 230.7),
   a ~ dnorm(25, 10),
   b ~ dunif(0, 0.1),
   sigma ~ dexp(0.2)
@@ -230,102 +230,60 @@ This looks very similar to the results as with the _rstanarm_ package.
 
 # Generalized Additive Model
 
-The linear model is a poor choice for this data, so I'll try a model with splines next. The _stan_gamm4_ function from the _rstanarm_ package fits Bayesian nonlinear (and mixed) models.  Again, the syntax is very similar to _gamm4_.
+```{r}
+library(splines)
+
+num_knots <- 15
+knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
+B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+
+cbind(disp=mtcars$disp,B) %>%
+#cbind(year=d2$year, B) %>%
+  as.data.frame() %>%
+  pivot_longer(-disp, names_to="spline", values_to="val") %>%
+  ggplot() +
+  geom_line(mapping=aes(x=disp, y=val, color=spline))
+```
+
 
 ```{r results='hide'}
-mdl3 <- stan_gamm4(mpg ~ s(disp, bs="cr", k=7), 
-                   data = mtcars, 
-                   cores=2, 
-                   adapt_delta = 0.99)
-```
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu <- a - B %*% w,
+  a ~ dnorm(25, 10),
+  w ~ dnorm(0,5),
+  sigma ~ dexp(0.2)
+)
 
-## Prior Predictive Distribution
 
-Unlike the linear model, it's not as straightforward to manually construct the prior predictive distribution.  Fortunately, _rstanarm_ will automatically generate it for us--we refit the model _without_ conditioning on the data by setting _prior_PD = TRUE_.
-
-```{r results="hide"}
-mdl3_prior_pred <- stan_gamm4(mpg ~ s(disp, bs="cr", k=7), 
-                   data = mtcars, 
-                   cores=2, 
-                   prior_PD = TRUE,
-                   adapt_delta = 0.99)
+mdl2 <- quap(f, data=list(mpg=mtcars$mpg, B=B),
+             start=list(w=rep(1, ncol(B)))
+            )
 ```
 
 ```{r}
-N <- 50
-
-D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
-
-prior_pred <- data.frame(t(posterior_epred(mdl3_prior_pred,
-                                newdata=data.frame(disp=D),
-                                draws=N)))
-
-tmp <- prior_pred %>%
-  mutate(disp = D)%>%
-  pivot_longer(cols=-"disp", names_to="iter", values_to="mpg") 
-
-tmp %>%
-  ggplot() +
-  geom_line(mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
-  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+precis(mdl2, depth=2)
 ```
 
-
-## Diagnostic Plots
-
-```{r}
-post <- as.array(mdl3)
-mcmc_trace(post, regex_pars=c("disp", "sigma"))
-```
-
-```{r}
-summary(mdl3)
-```
-
-The chains and _n_eff_ look good.
 
 ## Posterior Predictive Distribution
 
 And finally, the posterior predictive distribution:
 
 ```{r}
-library(forcats)
+mu <- link(mdl2)
+mu_mean <- as.data.frame(apply(mu, 2, mean)) %>%
+  mutate(disp=mtcars$disp)
+colnames(mu_mean) <- c("mpg_ppd", "disp")
 
-post <- posterior_predict(mdl3) %>%
-  apply(2, fivenum) %>%
-  t() %>%
-  as.data.frame() %>%
-  rownames_to_column(var="car")
+mu_PI <- as.data.frame(t(apply(mu,2,PI,0.89))) %>%
+  mutate(disp=mtcars$disp)
+colnames(mu_PI) <- c("lwr", "upr", "disp")
 
-dat <- mtcars %>%
-  select(c("mpg", "disp")) %>%
-  rownames_to_column(var="car")
+ggplot() +
+  geom_point(data=mtcars, aes(x=disp, y=mpg, color=factor(cyl))) +
+  geom_line(data=mu_mean, aes(x=disp, y=mpg_ppd)) +
+  geom_ribbon(data=mu_PI, aes(x=disp, ymin=lwr, ymax=upr), alpha=0.2)
 
-plyr::join(dat, post, by="car") %>%
-  ggplot(aes(x=fct_reorder(car, disp))) +
-  geom_boxplot(mapping=aes(ymin=V1, lower=V2, middle=V3, upper=V4, ymax=V5),
-               stat="identity",
-               outlier.shape = NA) +
-  geom_point(mapping=aes(y=mpg), color="red") +
-  theme(axis.text.x = element_text(angle = 90))
-```
-
-And the expectation over the ppd is plotted below, along with a loess curve for comparison. This model is clearly a better fit to the data than the linear model.
-
-```{r}
-
-p1 <- plot_nonlinear(mdl3, prob=0.89) +
-  geom_point(mapping=aes(x=disp, y=mpg-mean(mpg), color=factor(cyl)),
-             data=mtcars) +
-  labs(title="GAM", x="disp", y="mpg-mean(mpg)")
-
-p2 <- ggplot(mapping=aes(x=disp, y=mpg-mean(mpg)),
-              data=mtcars) +
-  geom_point(aes(color=factor(cyl)))+
-  stat_smooth(method="loess",
-              level=0.89) +
-  labs(title="LOESS")
-
-grid.arrange(p1, p2)
 ```
 
