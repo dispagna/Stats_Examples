@@ -13,13 +13,31 @@ source("FossilModel.R")
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
     
-    #samplesX <- reactive(rnorm(input$n, input$meanX, input$sdX))
-    #samplesY <- reactive(rnorm(input$n, input$meanY, input$sdY))
-    
     fossil <- reactive(getFossilData(input$percData/100))
-    
+
     output$dataPlot <- renderPlot({
         plotFossilData(fossil())
+    })
+    
+    mdl_prior <- eventReactive(input$updateButton, {
+        withProgress(message="Calculating prior predictive...this may take a few minutes...", style="old",
+                     {
+                         getPriorPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                     })
+    }
+    )
+    
+    mdl <- eventReactive(input$updateButton, {
+        withProgress(message="Calculating posterior predictive...this make take a few minutes...", style="old",
+                     {
+                         getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                     })
+    }
+    )
+    
+    output$priorPlot <- renderPlot({
+        
+        plotPriorPred(mdl_prior(), fossil())
     })
 
 })
