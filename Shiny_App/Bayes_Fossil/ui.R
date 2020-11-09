@@ -31,11 +31,11 @@ shinyUI(fluidPage(
                p("
                     \\(
                         \\begin{align*}
-                            Strontium.Ratio_i &\\sim N(\\mu_i, \\sigma^2) \\\\
+                            Strontium.Ratio_i &\\sim Normal(\\mu_i, \\sigma^2) \\\\
                             \\mu_i &= \\alpha + \\sum_k w_k * g_k(Age_i) \\\\
-                            \\alpha &\\sim N(\\mu_{\\alpha}, \\sigma_{\\alpha}^2) \\\\
-                            w_j &\\sim N(\\mu_w, \\sigma_w^2) \\\\
-                            \\sigma &\\sim Exp(\\lambda)
+                            \\alpha &\\sim Normal(\\mu_{\\alpha}, \\sigma_{\\alpha}^2) \\\\
+                            w_j &\\sim Normal(\\mu_w, \\sigma_w^2) \\\\
+                            \\sigma &\\sim Exponential(\\lambda)
                         \\end{align*}
                     \\)
                 "),
@@ -53,7 +53,7 @@ shinyUI(fluidPage(
                           sliderInput("lambda", "\\(\\lambda\\)", min=0.1, max=5, value=1)
                     ),
                    column(6,
-                          sliderInput("k", "k", min=3, max=10, value=7)
+                          sliderInput("k", "k", min=5, max=25, value=7)
                    )
                )
         ),
@@ -64,7 +64,8 @@ shinyUI(fluidPage(
                fluidRow(
                    column(3),
                    column(6, 
-                          sliderInput("percData", "% Data to Include", min=10, max=100, value=100),
+                          sliderInput("percData", "% Data to Include in Likelihood", 
+                                      min=10, max=100, value=100),
                     )
                 )
         )
@@ -77,11 +78,20 @@ shinyUI(fluidPage(
                                             plotOutput("priorPlot", height="300px"))
                             )
                           ),
-                 tabPanel("2. Diagnostic Plots"
+                 tabPanel("2. Diagnostic Plots",
+                          fluidRow(column(12,
+                                          plotOutput("mcmcChains", height="300px")
+                                          ))
                           ),
-                 tabPanel("3. Posterior Distribution"
+                 tabPanel("3. Posterior Summary",
+                          fluidRow(column(12,
+                                          verbatimTextOutput("modelSummary")
+                                          ))
                           ),
-                 tabPanel("4. Posterior Predictive Distribution"
+                 tabPanel("4. Posterior Predictive Distribution",
+                          fluidRow(column(12,
+                                          plotOutput("postPlot", height="300px"))
+                          )
                           )
              )
         )

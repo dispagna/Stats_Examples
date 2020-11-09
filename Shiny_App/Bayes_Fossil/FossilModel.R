@@ -1,4 +1,5 @@
 library(ggplot2)
+library(dplyr)
 library(rstanarm)
 library(parallel)
 
@@ -43,11 +44,13 @@ getPriorPred <- function(fossil, mu, sigma, lambda, k)
 {
   ncores <- min(max(1,detectCores()-1), 4)
   
+  fossil_inc <- fossil %>%
+    filter(include==TRUE)
+  
   mdl <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=k), 
-                                data = fossil, 
+                                data = fossil_inc, 
                                 cores=ncores, 
-                                prior_PD = TRUE,
-                                adapt_delta = 0.99)
+                                prior_PD = TRUE)
   mdl
 }
 
@@ -58,24 +61,26 @@ getPostPred <- function(fossil, mu, sigma, lambda, k)
 {
   ncores <- min(max(1,detectCores()-1), 4)
   
-  mdl <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=k), 
-                    data = fossil, 
-                    cores=ncores, 
-                    adapt_delta = 0.99)
+  fossil_inc <- fossil %>%
+    filter(include==TRUE)
+  
+  mdl <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=6), 
+                    data = fossil_inc, 
+                    cores=ncores)
   mdl
 }
 
-plotPriorPred <- function(mdl, fossil)
+plotPred <- function(mdl, fossil)
 {
   N <- 50
   
   D <- seq(min(fossil$Age), max(fossil$Age), length.out = N)
   
-  prior_pred <- data.frame(t(posterior_epred(mdl,
+  pred <- data.frame(t(posterior_epred(mdl,
                                              newdata=data.frame(Age=D),
                                              draws=N)))
   
-  tmp <- prior_pred %>%
+  tmp <- pred %>%
     mutate(Age = D)%>%
     pivot_longer(cols=-"Age", names_to="iter", values_to="Strontium.Ratio") 
   
@@ -83,5 +88,36 @@ plotPriorPred <- function(mdl, fossil)
     ggplot(aes(x=Age, y=Strontium.Ratio)) +
     geom_line(aes(group=iter), alpha=0.2) +
     geom_point(data=fossil, aes(color=include, alpha=include)) +
+    scale_alpha_discrete(range=c(1.0, 0.3))
+}
+
+#'
+#'
+#'
+plotChains <- function(mdl)
+{
+  post <- as.array(mdl)
+  mcmc_trace(post)
+}
+
+#'
+#'
+#'
+getSummary <- function(mdl)
+{
+  if (!is.null(mdl))
+  {
+    summary(mdl)
+  }
+}
+
+#'
+#'
+#'
+plotPost <- function(mdl, fossil)
+{
+  plot_nonlinear(mdl, prob=0.89) +
+    geom_point(data=fossil, mapping=aes(x=Age, y=Strontium.Ratio-mean(Strontium.Ratio), 
+                                        color=include, alpha=include)) +
     scale_alpha_discrete(range=c(1.0, 0.3))
 }

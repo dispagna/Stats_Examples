@@ -20,24 +20,34 @@ shinyServer(function(input, output) {
     })
     
     mdl_prior <- eventReactive(input$updateButton, {
-        withProgress(message="Calculating prior predictive...this may take a few minutes...", style="old",
-                     {
-                         getPriorPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                     })
+        
     }
     )
     
     mdl <- eventReactive(input$updateButton, {
-        withProgress(message="Calculating posterior predictive...this make take a few minutes...", style="old",
+        withProgress(message="Calculating prior predictive...this may take a few minutes...", style="old",
                      {
-                         getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                     })
-    }
-    )
+                         prior <- getPriorPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                         incProgress(amount=0.5, 
+                                     message = "Calculating posterior predictive...this make take a few minutes...")
+                         post <- getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                         list(prior=prior, post=post)
+                    })
+    })
     
     output$priorPlot <- renderPlot({
-        
-        plotPriorPred(mdl_prior(), fossil())
+        plotPred(mdl()$prior, fossil())
     })
 
+    output$mcmcChains <- renderPlot({
+        plotChains(mdl()$post)
+    })
+    
+    output$modelSummary <- renderPrint({
+        getSummary(mdl()$post)
+    })
+    
+    output$postPlot <- renderPlot({
+        plotPred(mdl()$post, fossil())
+    })
 })
