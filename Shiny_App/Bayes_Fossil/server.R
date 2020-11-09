@@ -25,13 +25,13 @@ shinyServer(function(input, output) {
     )
     
     mdl <- eventReactive(input$updateButton, {
-        withProgress(message="Calculating prior predictive...this may take a few minutes...", style="old",
+        withProgress(message="Calculating model...this may take a few minutes...", style="old",
                      {
-                         prior <- getPriorPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                         incProgress(amount=0.5, 
-                                     message = "Calculating posterior predictive...this make take a few minutes...")
-                         post <- getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                         list(prior=prior, post=post)
+                         getModel(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                         # incProgress(amount=0.5, 
+                         #             message = "Calculating posterior predictive...this make take a few minutes...")
+                         # post <- getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                         # list(prior=prior, post=post)
                     })
     })
     

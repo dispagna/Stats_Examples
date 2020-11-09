@@ -1,5 +1,6 @@
 library(tidyverse)
 library(rstanarm)
+library(bayesplot)
 library(parallel)
 
 #' Reads in fossil data
@@ -39,34 +40,27 @@ plotFossilData <- function(fossil)
 #' Prior predictive distribution
 #' 
 #' @param 
-getPriorPred <- function(fossil, mu, sigma, lambda, k)
+getModel <- function(fossil, mu, sigma, lambda, k)
 {
   ncores <- min(max(1,detectCores()-1), 4)
   
   fossil_inc <- fossil %>%
     filter(include==TRUE)
   
-  mdl <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=k), 
-                                data = fossil_inc, 
-                                cores=ncores, 
-                                prior_PD = TRUE)
-  mdl
-}
-
-#' Prior predictive distribution
-#' 
-#' @param 
-getPostPred <- function(fossil, mu, sigma, lambda, k)
-{
-  ncores <- min(max(1,detectCores()-1), 4)
-  
-  fossil_inc <- fossil %>%
-    filter(include==TRUE)
-  
-  mdl <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=6), 
+  post <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=6), 
                     data = fossil_inc, 
+                    refresh=-1,
                     cores=ncores)
-  mdl
+  
+  prior <- suppressWarnings(update(
+    post,
+    prior_PD = TRUE,
+    refresh = -1,
+    chains = 2,
+    cores=ncores
+  ))
+  
+  list(prior=prior, post=post)
 }
 
 plotPred <- function(mdl, fossil)
@@ -106,7 +100,7 @@ getSummary <- function(mdl)
 {
   if (!is.null(mdl))
   {
-    summary(mdl)
+    summary(mdl, digits=5)
   }
 }
 
