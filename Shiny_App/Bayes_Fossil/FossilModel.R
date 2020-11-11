@@ -37,9 +37,15 @@ plotFossilData <- function(fossil)
     scale_alpha_discrete(range=c(1.0, 0.3))
 }
 
-#' Prior predictive distribution
+#' Fit model both post and prior
 #' 
-#' @param 
+#' @param fossil data frame with fossil data
+#' @param mu     prior mean for intercept
+#' @param sigma  prior std deviation for intercept
+#' @param lambda prior mean for variance
+#' @param k      dimension of basis (i.e., number of spline terms)
+#' @param std    boolean indicating whether or not to standardize data
+#'               before fitting model
 getModel <- function(fossil, mu, sigma, lambda, k, std=TRUE)
 {
   ncores <- min(max(1,detectCores()-1), 4)
@@ -70,6 +76,9 @@ getModel <- function(fossil, mu, sigma, lambda, k, std=TRUE)
   list(prior=prior, post=post)
 }
 
+#' Plots predictions from model
+#' 
+#' @ param mdl stanreg object
 plotPred <- function(mdl)
 {
   N <- 50
@@ -91,18 +100,18 @@ plotPred <- function(mdl)
     scale_alpha_discrete(range=c(1.0, 0.3))
 }
 
+#' Plot chain diagnostics
 #'
-#'
-#'
+#' @param mdl stanreg object
 plotChains <- function(mdl)
 {
   post <- as.array(mdl)
   mcmc_trace(post)
 }
 
+#' Prints model summary
 #'
-#'
-#'
+#' @param mdl stanreg object
 getSummary <- function(mdl)
 {
   if (!is.null(mdl))
@@ -111,13 +120,3 @@ getSummary <- function(mdl)
   }
 }
 
-#'
-#'
-#'
-plotPost <- function(mdl, fossil)
-{
-  plot_nonlinear(mdl, prob=0.89) +
-    geom_point(data=fossil, mapping=aes(x=Age, y=Strontium.Ratio-mean(Strontium.Ratio), 
-                                        color=include, alpha=include)) +
-    scale_alpha_discrete(range=c(1.0, 0.3))
-}
