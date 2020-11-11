@@ -18,8 +18,8 @@ shinyUI(fluidPage(
     
     fluidRow(
         column(6,
-               p("Using the slider bars, you can see the effect of changing the characteristics
-                 of the priors and/or amount of observed data to include in the likelihood on
+               p("Using the slider bars, you can see the effect of changing the prior
+                 hyperparameters and/or amount of observed data to include in the likelihood on
                  the model below. Click the Update Model button after you've made your selections."),
                fluidRow(
                    column(3),
@@ -27,6 +27,7 @@ shinyUI(fluidPage(
                           actionButton("updateButton", "Update Model")
                           ),
                ),
+               hr(),
                p(),
                p("
                     \\(
@@ -39,6 +40,9 @@ shinyUI(fluidPage(
                         \\end{align*}
                     \\)
                 "),
+               fluidRow(column(12, checkboxInput("checkbox", 
+                                                 label = "Standardize Before Fitting", 
+                                                 value = TRUE))),
                fluidRow(
                    column(6,
                           # Inputs for Mean
@@ -53,7 +57,8 @@ shinyUI(fluidPage(
                           sliderInput("lambda", "\\(\\lambda\\)", min=0.1, max=5, value=1)
                     ),
                    column(6,
-                          sliderInput("k", "k", min=5, max=25, value=7)
+                          # setting max=9 due to shinyapps.io memory limitations
+                          sliderInput("k", "k", min=3, max=9, value=5)
                    )
                )
         ),
@@ -75,12 +80,12 @@ shinyUI(fluidPage(
              tabsetPanel(
                  tabPanel("1. Prior Predictive Distribution",
                             fluidRow(column(12,
-                                            plotOutput("priorPlot", height="300px"))
+                                            plotOutput("priorPlot", height="400px"))
                             )
                           ),
                  tabPanel("2. Diagnostic Plots",
                           fluidRow(column(12,
-                                          plotOutput("mcmcChains", height="300px")
+                                          plotOutput("mcmcChains", height="400px")
                                           ))
                           ),
                  tabPanel("3. Posterior Summary",
@@ -90,7 +95,7 @@ shinyUI(fluidPage(
                           ),
                  tabPanel("4. Posterior Predictive Distribution",
                           fluidRow(column(12,
-                                          plotOutput("postPlot", height="300px"))
+                                          plotOutput("postPlot", height="400px"))
                           )
                           )
              )

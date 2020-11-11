@@ -14,29 +14,21 @@ source("FossilModel.R")
 shinyServer(function(input, output) {
     
     fossil <- reactive(getFossilData(input$percData/100))
+    std <- reactive(input$checkbox)
 
     output$dataPlot <- renderPlot({
         plotFossilData(fossil())
     })
     
-    mdl_prior <- eventReactive(input$updateButton, {
-        
-    }
-    )
-    
     mdl <- eventReactive(input$updateButton, {
-        withProgress(message="Calculating model...this may take a few minutes...", style="old",
+        withProgress(message="Fitting model...please be patient...", style="old",
                      {
                          getModel(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                         # incProgress(amount=0.5, 
-                         #             message = "Calculating posterior predictive...this make take a few minutes...")
-                         # post <- getPostPred(fossil(), input$mu, input$sigma, input$lambda, input$k)
-                         # list(prior=prior, post=post)
                     })
     })
     
     output$priorPlot <- renderPlot({
-        plotPred(mdl()$prior, fossil())
+        plotPred(mdl()$prior)
     })
 
     output$mcmcChains <- renderPlot({
@@ -48,6 +40,14 @@ shinyServer(function(input, output) {
     })
     
     output$postPlot <- renderPlot({
-        plotPred(mdl()$post, fossil())
+        plotPred(mdl()$post)
+    })
+    
+    observeEvent(req(input$checkbox==FALSE), {
+            showModal(modalDialog(
+                title = "Warning",
+                "Model fitting is significantly slower if data isn't standardized.",
+                easyClose = TRUE
+            ))
     })
 })
