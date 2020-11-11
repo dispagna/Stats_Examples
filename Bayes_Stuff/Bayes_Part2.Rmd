@@ -230,6 +230,8 @@ This looks very similar to the results as with the _rstanarm_ package.
 
 # Generalized Additive Model
 
+Setting up the semi-parametric model is a bit more work in the _rethinking_ package.  First, I create the splines explicitly.  The component splines are plotted below.
+
 ```{r}
 library(splines)
 
@@ -237,14 +239,17 @@ num_knots <- 15
 knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
 B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
 
-cbind(disp=mtcars$disp,B) %>%
-#cbind(year=d2$year, B) %>%
+# Plot at smaller intervals so curves are smooth
+B_plot <- bs(seq(min(mtcars$disp), max(mtcars$disp)), 
+             knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+cbind(disp=seq(min(mtcars$disp), max(mtcars$disp)), B_plot) %>%
   as.data.frame() %>%
   pivot_longer(-disp, names_to="spline", values_to="val") %>%
   ggplot() +
-  geom_line(mapping=aes(x=disp, y=val, color=spline))
+  geom_line(mapping=aes(x=disp, y=val, color=spline), linetype="dashed")
 ```
 
+Then I define the model with the splines.  I wasn't able to get this model to work with either the _map2stan_ or _ulam_ functions, so I used _quap_ instead which is a quadratic approximation.
 
 ```{r results='hide'}
 f <- alist(
@@ -260,6 +265,8 @@ mdl2 <- quap(f, data=list(mpg=mtcars$mpg, B=B),
              start=list(w=rep(1, ncol(B)))
             )
 ```
+
+Since MCMC was not used to fit the model, there are no chain diagnostics to examine.  We can look at the posterior distributions, although they aren't easy to interpret.  The posterior predictive distribution will be more useful in evaluating the model.
 
 ```{r}
 precis(mdl2, depth=2)
@@ -287,3 +294,4 @@ ggplot() +
 
 ```
 
+The plot isn't smooth because the _link_ function computes the inverse-link function at the specified values of _disp_ when the model was fit. I'll have to investigate the package further to determine how to extract predictions at interpolated values of _disp_.
