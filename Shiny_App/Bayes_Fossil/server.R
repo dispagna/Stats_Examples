@@ -23,7 +23,8 @@ shinyServer(function(input, output) {
     mdl <- eventReactive(input$updateButton, {
         withProgress(message="Fitting model...please be patient...", style="old",
                      {
-                         getModel(fossil(), input$mu, input$sigma, input$lambda, input$k)
+                         getModel(fossil(), input$mu_intercept, input$sigma_intercept, 
+                                  input$lambda, input$k)
                     })
     })
     
