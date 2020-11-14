@@ -42,14 +42,17 @@ plotFossilData <- function(fossil)
 #' @param fossil data frame with fossil data
 #' @param mu     prior mean for intercept
 #' @param sigma  prior std deviation for intercept
-#' @param lambda prior mean for variance
+#' @param lambda prior mean/variance for variance
+#' @param lambda_w prior mean/variance for smooth
 #' @param k      dimension of basis (i.e., number of spline terms)
 #' @param std    boolean indicating whether or not to standardize data
 #'               before fitting model
 getModel <- function(fossil, 
                      mu_intercept, 
                      sigma_intercept, 
-                     lambda, k, std=TRUE)
+                     lambda, 
+                     lambda_w,
+                     k, std=TRUE)
 {
   ncores <- min(max(1,detectCores()-1), 4)
   
@@ -64,6 +67,8 @@ getModel <- function(fossil,
 
   post <- stan_gamm4(Strontium.Ratio ~ s(Age, bs="cr", k=k), 
                      prior_intercept = normal(mu_intercept, sigma_intercept),
+                     prior_aux = exponential(lambda),
+                     prior_smooth = exponential(lambda_w),
                     data = fossil_inc, 
                     refresh=-1,
                     cores=ncores,

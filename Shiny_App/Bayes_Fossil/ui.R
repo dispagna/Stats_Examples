@@ -81,7 +81,7 @@ shinyUI(fluidPage(
                            p("$$\\sigma \\sim Exponential(\\lambda)$$")
                            ),
                    column(4,
-                          sliderInput("lambda", "\\(\\lambda\\)", min=0.1, max=5, value=1)
+                          sliderInput("lambda", "\\(\\lambda\\)", min=0.1, max=3, value=1)
                     )
                ),
                fluidRow(
@@ -89,7 +89,7 @@ shinyUI(fluidPage(
                           p("$$\\sigma_w \\sim Exponential(\\lambda_w)$$")
                    ),
                    column(4,
-                          sliderInput("lambda_w", "\\(\\lambda_w\\)", min=0.1, max=5, value=1)
+                          sliderInput("lambda_w", "\\(\\lambda_w\\)", min=0.1, max=3, value=1)
                    )
                ),
                fluidRow(

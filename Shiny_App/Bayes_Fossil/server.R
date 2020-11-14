@@ -10,6 +10,21 @@
 library(shiny)
 source("FossilModel.R")
 
+# custom tryCatch to return result and warnings from
+# http://stackoverflow.com/a/24569739/2271856
+myTryCatch <- function(expr) {
+    warn <- err <- NULL
+    value <- withCallingHandlers(
+        tryCatch(expr, error=function(e) {
+            err <<- e
+            NULL
+        }), warning=function(w) {
+            warn <<- w
+            invokeRestart("muffleWarning")
+        })
+    list(value=value, warning=warn, error=err)
+}
+
 # Define server logic required to draw a histogram
 shinyServer(function(input, output) {
     
@@ -23,8 +38,16 @@ shinyServer(function(input, output) {
     mdl <- eventReactive(input$updateButton, {
         withProgress(message="Fitting model...please be patient...", style="old",
                      {
-                         getModel(fossil(), input$mu_intercept, input$sigma_intercept, 
-                                  input$lambda, input$k)
+                         res <- myTryCatch(getModel(fossil(), input$mu_intercept, input$sigma_intercept, 
+                                      input$lambda, input$lambda_w, input$k))
+                         if (!is.null(res$warning)) {
+                                      showModal(modalDialog(
+                                          title = "Warning",
+                                          res$warning,
+                                          easyClose = TRUE
+                                      ))
+                         }
+                         res$value
                     })
     })
     
