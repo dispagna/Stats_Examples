@@ -19,7 +19,7 @@ myTryCatch <- function(expr) {
             err <<- e
             NULL
         }), warning=function(w) {
-            warn <<- w
+            warn <<- append(warn, w)
             invokeRestart("muffleWarning")
         })
     list(value=value, warning=warn, error=err)
@@ -46,6 +46,13 @@ shinyServer(function(input, output) {
                                           res$warning,
                                           easyClose = TRUE
                                       ))
+                         }
+                         if (!is.null(res$error)) {
+                             showModal(modalDialog(
+                                 title = "Error",
+                                 res$error,
+                                 easyClose = TRUE
+                             ))
                          }
                          res$value
                     })
