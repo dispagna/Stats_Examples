@@ -1,0 +1,334 @@
+---
+title: "Bayes R Packages Part 3"
+author: "Melissa"
+date: "11/14/2020"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 2
+---
+
+# Introduction
+
+In this post, I'll work through the same example in Part 1 using the _rstan_ package.  Recall that I'm using the mtcars dataset, and I'm interested in a model with response _mpg_ and predictor _disp_.
+
+# Setup Environment
+
+First some basic R environment setup.
+
+```{r results='hide', message=FALSE, warning=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(bayesplot)
+library(shinystan)
+library(rstan)
+library(gridExtra)
+
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+
+options("scipen" = 1, "digits" = 4)
+
+set.seed(123)
+```
+
+Setting the the following option saves a compiled version of the model to hard disk, so it only needs to be recompiled if the model is changed.
+```{r}
+rstan_options(auto_write = TRUE)
+```
+
+```{r}
+library(datasets)
+data(mtcars)
+#head(mtcars)
+```
+
+
+```{r}
+mtcars %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_point(aes(color=factor(cyl))) 
+```
+
+# Linear Model 
+
+Again I'll start with a linear model even though it clearly isn't going to be a great fit to the data. Like the _rethinking_package, _rstan_ doesn't have default priors, so I need to explicitly choose them:
+
+\begin{align*}
+  mpg \sim N(\mu, \sigma^2) \\
+  \mu = a + b*disp \\
+  a \sim N(25,10) \\
+  b \sim U(-0.1, 0) \\
+  \sigma \sim Exp(0.2)
+\end{align*}
+
+Defining the model in _rstan_ is a bit different since the syntax is more akin to C/C++.  For a simple linear model there are three sections to the model definition:
+
+1. `data` - This is where the data structures for the known/observed portions of the model (e.g., the number of observations, the number and type of predictors) are defined.
+
+2. `parameters` - This is where the data structures for the parameters to be estimated are defined. For example, the coefficients of the simple linear model belong in this section.
+
+3. `model` - This is where the model (including priors) is defined using the data structures from the previous sections.
+
+```{r}
+# Define model
+
+mdl_code <- '
+  data{
+    int<lower=1> N;
+    vector[N] mpg;
+    vector[N] disp;
+  }
+  parameters{
+    real a;
+    real<lower=-0.1, upper=0.0> b;
+    real<lower=0.0> sigma;
+  }
+  model{
+    mpg ~ normal(a + b * disp, sigma);
+    a ~ normal(25, 10);
+    b ~ uniform(-0.1, 0.0);
+    sigma ~ exponential(0.2);
+  }
+'
+```
+
+A few comments about the model definition.  
+
+1. For those only familiar with R, it may seem like a lot of extra "stuff" is going on in the `code` and `parameters` sections.  This is because under the hood _rstan_ and _stan_ use C++ which is dynamically typed, unlike R which is statically typed.  What that means is you must define the type of any variable before you use it.
+
+2. The `lower=` and `upper=` statements define bounds for a variable. The data is checked against the bounds which can detect errors pre-compilation. Generally, bounds are a good idea but aren't required. Except for...
+
+3. A narrow interval prior, such as for _b_ in the above model, does require both upper and lower bounds be specified.  This blog [post](https://statmodeling.stat.columbia.edu/2017/11/28/computational-statistical-issues-uniform-interval-priors/) explains why.  And it also explains why narrow interval priors are not a good idea!  This had never come up in any of my courses. For the sake of consistency, I'll leave the model as is so it's easy to compare against what I did previously with _rstanarm_ and _rethinking_, but lesson learned for the future.
+
+
+Next, populate the data structures from the `data` section and save in a list.
+
+```{r}
+mdl_data <- list(N = nrow(mtcars),
+                 mpg = mtcars$mpg,
+                 disp = mtcars$disp)
+```
+
+Now fit the model.
+
+```{r results='hide'}
+# Fit model
+mdl1 <- stan(model_code=mdl_code, data=mdl_data, model_name="mdl")
+```
+
+## Prior Predictive Distribution
+
+Next, I'll examine the prior predictive distribution to see if the default priors seem reasonable. This model is simple enough that I could manually construct the prior predictive distribution (see example here).  But I can also have _stan_ generate the prior predictive distribution which will be useful for more complex models. To do this, I create another model with just the `data` and `generated quantities` section.  The `generated quantities` section mirrors the `model` section except it is now drawing samples from the priors without conditioning on the observed data. Also, in the _stan_ call I need to set the sampling algorithm for fixed parameters.
+
+```{r results='hide'}
+# Plot prior predictive distribution
+mdl_prior <- '
+  data{
+    int<lower=1> N;
+    vector[N] disp;
+  }
+generated quantities{
+  real a_sim = normal_rng(25, 10);
+  real b_sim = uniform_rng(-0.1, 0.0);
+  real sigma_sim = exponential_rng(0.2);
+  real mpg_sim[N] = normal_rng(a_sim + b_sim * disp, sigma_sim);
+}
+'
+
+N<- 50
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+mdl_data <- list(N = N,
+                 disp = D)
+
+mdl1 <- stan(model_code=mdl_prior, data=mdl_data, model_name="mdl_prior",
+             chains=1, algorithm="Fixed_param")
+
+```
+
+```{r}
+draws <- as.data.frame(mdl1) %>%
+  head(100)
+
+# Expected prior predictive distribution
+exp_mpg_sim <- apply(draws, 1, function(x) x["a_sim"] + x["b_sim"]*D) %>%
+  as.data.frame() %>%
+  mutate(disp = D) %>%
+  pivot_longer(-c("disp"), names_to="iter", values_to="mpg") 
+
+# 89% interval prior predictive distribution
+mpg_sim <- draws %>% select(starts_with("mpg")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = D)
+
+ggplot() +
+  geom_line(data=exp_mpg_sim, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+  geom_ribbon(data=mpg_sim, mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="lightblue")
+```
+
+
+## Diagnostic Plots
+
+### Trace Plots
+
+The _traceplot_ function (equivalent to _mcmc_trac_ in the _bayesplot_ package) plots the MCMC draws.
+
+```{r}
+traceplot(mdl1@stanfit)
+```
+
+Recall that there are three things I am looking for in the trace plot of each chain:
+
+  1. *Good mixing* -  In other words, the chain is rapidly changing values across the full region versus getting "stuck" near a particular value and slowly changing.
+  
+  2. *Stationarity* - The mean of the chain is relatively stable.
+  
+  3. *Convergence* - All of the chains spend most of the time around the same high-probability value.
+    
+The trace plots above look good.  
+
+### Trace Rank Plot
+
+Another alternative is the _trankplot_ function (equivalent to the _mcmc_rank_overlay_ function in the _bayesplot_ package).  
+
+```{r}
+trankplot(mdl1)
+```
+
+### Effective Sample Size
+
+The _trankplot_ function conveniently also displays the effective sample size (_n_eff_).  But the _precis_ function is another way to get that information.
+
+```{r}
+precis(mdl1)
+```
+
+## Posterior Distribution
+
+Since the chains and _n_eff_ look good, I'll examine the posterior distribution next. Again, the _precis_ function gives both the point estimates and credible intervals for _a_, _b_ and _sigma_.
+
+```{r}
+precis(mdl1)
+```
+
+### Posterior Predictive Distribution
+
+Finally, I'll check the posterior predictive distribution. The _postcheck_ function displays a plot for posterior predictive checking.
+
+```{r}
+postcheck(mdl1, window=nrow(mtcars))
+```
+
+Under the hood, the _postcheck_ function uses the _sim_ function which draws samples from the posterior predictive distribution. So I can also use the _sim_ function directly to create the same posterior predictive distribution plot as I did with _rstanarm_ previously.  
+
+```{r}
+library(forcats)
+
+post <- sim(mdl1) %>%
+  apply(2, fivenum) %>%
+  t() %>%
+  as.data.frame()
+
+dat <- mtcars %>%
+  select(c("mpg", "disp")) %>%
+  rownames_to_column(var="car")
+
+cbind(dat, post) %>%
+  ggplot(aes(x=fct_reorder(car, disp))) +
+  geom_boxplot(mapping=aes(ymin=V1, lower=V2, middle=V3, upper=V4, ymax=V5),
+               stat="identity",
+               outlier.shape = NA) +
+  geom_point(mapping=aes(y=mpg), color="red") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+Another useful visualization is the expectation of the posterior predictive distribution (i.e., $\mu$). The _link_ function returns the linear predictor, possibly transformed by the inverse-link function. In this case, the model is a Gaussian likelihood with an identity link function, so the _sim_ and _link_ functions return identical results.
+
+```{r}
+newdata <- data.frame(disp=seq(min(mtcars$disp), max(mtcars$disp)))
+
+y_rep <- as.data.frame(t(link(mdl1, data=newdata, n=50))) %>%
+  cbind(newdata) %>%
+  pivot_longer(cols=starts_with("V"), names_to="grp", values_to="mpg")
+
+y_rep %>%
+  ggplot(aes(x=disp, y=mpg)) +
+  geom_line(aes(group=grp), alpha=0.2) +
+  geom_point(data = mtcars, aes(color=factor(cyl))) 
+```
+
+This looks very similar to the results as with the _rstanarm_ package.
+
+# Generalized Additive Model
+
+Setting up the semi-parametric model is a bit more work in the _rethinking_ package.  First, I create the splines explicitly.  The component splines are plotted below.
+
+```{r}
+library(splines)
+
+num_knots <- 15
+knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
+B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+
+# Plot at smaller intervals so curves are smooth
+B_plot <- bs(seq(min(mtcars$disp), max(mtcars$disp)), 
+             knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+cbind(disp=seq(min(mtcars$disp), max(mtcars$disp)), B_plot) %>%
+  as.data.frame() %>%
+  pivot_longer(-disp, names_to="spline", values_to="val") %>%
+  ggplot() +
+  geom_line(mapping=aes(x=disp, y=val, color=spline), linetype="dashed")
+```
+
+Then I define the model with the splines.  I wasn't able to get this model to work with either the _map2stan_ or _ulam_ functions, so I used _quap_ instead which is a quadratic approximation.
+
+```{r results='hide'}
+f <- alist(
+  mpg ~ dnorm(mu, sigma),
+  mu <- a - B %*% w,
+  a ~ dnorm(25, 10),
+  w ~ dnorm(0,5),
+  sigma ~ dexp(0.2)
+)
+
+
+mdl2 <- quap(f, data=list(mpg=mtcars$mpg, B=B),
+             start=list(w=rep(1, ncol(B)))
+            )
+```
+
+Since MCMC was not used to fit the model, there are no chain diagnostics to examine.  We can look at the posterior distributions, although they aren't easy to interpret.  The posterior predictive distribution will be more useful in evaluating the model.
+
+```{r}
+precis(mdl2, depth=2)
+```
+
+
+## Posterior Predictive Distribution
+
+And finally, the posterior predictive distribution:
+
+```{r}
+mu <- link(mdl2)
+mu_mean <- as.data.frame(apply(mu, 2, mean)) %>%
+  mutate(disp=mtcars$disp)
+colnames(mu_mean) <- c("mpg_ppd", "disp")
+
+mu_PI <- as.data.frame(t(apply(mu,2,PI,0.89))) %>%
+  mutate(disp=mtcars$disp)
+colnames(mu_PI) <- c("lwr", "upr", "disp")
+
+ggplot() +
+  geom_point(data=mtcars, aes(x=disp, y=mpg, color=factor(cyl))) +
+  geom_line(data=mu_mean, aes(x=disp, y=mpg_ppd)) +
+  geom_ribbon(data=mu_PI, aes(x=disp, ymin=lwr, ymax=upr), alpha=0.2)
+
+```
+
+The plot isn't smooth because the _link_ function computes the inverse-link function at the specified values of _disp_ when the model was fit. I'll have to investigate the package further to determine how to extract predictions at interpolated values of _disp_.
