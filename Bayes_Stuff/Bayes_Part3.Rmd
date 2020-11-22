@@ -1,7 +1,7 @@
 ---
 title: "Bayes R Packages Part 3"
 author: "Melissa"
-date: "11/14/2020"
+date: "11/22/2020"
 output: 
   github_document:
     toc: true
@@ -161,7 +161,7 @@ exp_mpg_sim <- apply(draws, 1, function(x) x["a_sim"] + x["b_sim"]*D) %>%
   pivot_longer(-c("disp"), names_to="iter", values_to="mpg") 
 
 # 89% interval prior predictive distribution
-mpg_sim <- draws %>% select(starts_with("mpg")) %>%
+mpg_sim <- as.data.frame(mdl_prior) %>% select(starts_with("mpg")) %>%
   apply(2, function(x) quantile(x, probs=c(0.055, 0.945))) %>%
   t() %>%
   as.data.frame() %>%
@@ -281,3 +281,161 @@ As expected, the linear model isn't a great fit to the data, but the results are
 
 # Generalized Additive Model
 
+I follow the example in this [vignette](https://github.com/milkha/Splines_in_Stan/blob/master/splines_in_stan.pdf) for fitting a semi-parametric model with _rstan_. First, I'll define the splines just as I did when using the _rethinking_ package.  
+
+```{r}
+library(splines)
+
+num_knots <- 7
+knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
+B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+
+# Plot at smaller intervals so curves are smooth
+N<- 50
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+B_plot <- bs(D, 
+             knots=knot_list[-c(1,num_knots)], 
+             intercept=TRUE)
+
+cbind(disp=seq(min(mtcars$disp), max(mtcars$disp)), B_plot) %>%
+  as.data.frame() %>%
+  pivot_longer(-disp, names_to="spline", values_to="val") %>%
+  ggplot() +
+  geom_line(mapping=aes(x=disp, y=val, color=spline), linetype="dashed")
+```
+
+### Prior Predictive Distribution
+
+```{r}
+# Define model
+
+mdl2 <- '
+  data{
+    int<lower=1> N;
+    int<lower=1> num_basis;
+    //vector[N] mpg;
+    //vector[N] disp;
+    matrix[N, num_basis] B;
+  }
+  generated quantities{
+    real a_sim = normal_rng(25, 10);
+    real sigma_sim = exponential_rng(0.2);
+    real mpg_sim[N];
+    vector[num_basis] w_sim;
+    for (i in 1:num_basis)
+      w_sim[i] = normal_rng(0,5);
+    mpg_sim = normal_rng(a_sim + B * w_sim, sigma_sim);
+}
+'
+
+N<- 50
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+B_plot <- bs(D, 
+             knots=knot_list[-c(1,num_knots)], 
+             intercept=TRUE)
+
+mdl_data_prior <- list(N=N, 
+                 num_basis=ncol(B_plot),
+                 B=B_plot)
+
+mdl_gam_prior <- stan(model_code=mdl2, 
+                      data=mdl_data_prior,
+             chains=1, algorithm="Fixed_param")
+```
+```{r}
+draws <- as.data.frame(mdl_gam_prior) %>%
+  head(100)
+
+# Expected value prior predictive distribution
+exp_mpg_sim <- apply(draws, 1, function(x) {
+  x["a_sim"] + B_plot %*% x[grepl("w", names(x))]
+}) %>%
+  as.data.frame() %>%
+  mutate(disp = D) %>%
+  pivot_longer(-c("disp"), names_to="iter", values_to="mpg") 
+
+# 89% interval prior predictive distribution
+mpg_sim <- as.data.frame(mdl_gam_prior) %>% select(starts_with("mpg")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = D)
+
+ggplot() +
+  geom_line(data=exp_mpg_sim, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+  geom_ribbon(data=mpg_sim, mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="lightblue")
+```
+
+### Posterior
+
+```{r}
+# Define model
+
+mdl_code <- '
+  data{
+    int<lower=1> N;
+    int<lower=1> num_basis;
+    vector[N] mpg;
+    vector[N] disp;
+    matrix[N, num_basis] B;
+  }
+  parameters{
+    real a;
+    real<lower=0.0> sigma;
+    vector[num_basis] w;
+    //real<lower=0.0> sigma_w;
+    //real<lower=0.0> sigma_a;
+  }
+  model{
+    mpg ~ normal(a + B*w, sigma);
+    a ~ normal(25, 10);
+    //a ~ normal(0, sigma_a);
+    //sigma_a ~ cauchy(0,1);
+    sigma ~ exponential(0.2);
+    w ~ normal(0, 5);
+    //sigma_w ~ cauchy(0,1);
+  }
+'
+
+mdl_data <- list(N=nrow(mtcars), 
+                 num_basis=ncol(B),
+                 B=B,
+                 mpg = mtcars$mpg,
+                 disp = mtcars$disp)
+
+# Fit model
+mdl_gam <- stan(model_code=mdl_code, data=mdl_data)
+```
+
+```{r}
+print(mdl_gam)
+```
+
+### Posterior Predictive Distribution
+
+Finally, I'll check the posterior predictive distribution. Using the posterior samples, I can plot the expected value of the posterior predictive distribution.
+
+```{r}
+
+N<- 50
+D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+B_plot <- bs(D, 
+             knots=knot_list[-c(1,num_knots)], 
+             intercept=TRUE)
+
+draws <- as.data.frame(mdl_gam) %>%
+  head(100)
+
+# Expected value posterior predictive distribution
+post_pred <- apply(draws, 1, function(x) {
+  x["a"] + B_plot %*% x[grepl("w", names(x))]
+}) %>%
+  as.data.frame() %>%
+  mutate(disp = D) %>%
+  pivot_longer(-c("disp"), names_to="iter", values_to="mpg") 
+
+ggplot() +
+  geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+```
