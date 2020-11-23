@@ -281,12 +281,12 @@ As expected, the linear model isn't a great fit to the data, but the results are
 
 # Generalized Additive Model
 
-I follow the example in this [vignette](https://github.com/milkha/Splines_in_Stan/blob/master/splines_in_stan.pdf) for fitting a semi-parametric model with _rstan_. First, I'll define the splines just as I did when using the _rethinking_ package.  
+First, I'll define the splines just as I did when using the _rethinking_ package.  
 
 ```{r}
 library(splines)
 
-num_knots <- 7
+num_knots <- 4
 knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
 B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
 
@@ -327,12 +327,6 @@ mdl2 <- '
     mpg_sim = normal_rng(a_sim + B * w_sim, sigma_sim);
 }
 '
-
-N<- 50
-D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
-B_plot <- bs(D, 
-             knots=knot_list[-c(1,num_knots)], 
-             intercept=TRUE)
 
 mdl_data_prior <- list(N=N, 
                  num_basis=ncol(B_plot),
@@ -396,6 +390,9 @@ mdl_code <- '
     w ~ normal(0, 5);
     //sigma_w ~ cauchy(0,1);
   }
+  generated quantities{
+    real mpg_ppd[N] = normal_rng(a + B*w, sigma);
+  }
 '
 
 mdl_data <- list(N=nrow(mtcars), 
@@ -414,28 +411,50 @@ print(mdl_gam)
 
 ### Posterior Predictive Distribution
 
-Finally, I'll check the posterior predictive distribution. Using the posterior samples, I can plot the expected value of the posterior predictive distribution.
+Finally, I'll check the posterior predictive distribution, and compare it to the loess.  
 
 ```{r}
 
-N<- 50
-D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
-B_plot <- bs(D, 
-             knots=knot_list[-c(1,num_knots)], 
-             intercept=TRUE)
+# N<- 50
+# D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
+# B_plot <- bs(D, 
+#              knots=knot_list[-c(1,num_knots)], 
+#              intercept=TRUE)
 
 draws <- as.data.frame(mdl_gam) %>%
   head(100)
 
 # Expected value posterior predictive distribution
 post_pred <- apply(draws, 1, function(x) {
-  x["a"] + B_plot %*% x[grepl("w", names(x))]
+  x["a"] + B %*% x[grepl("w", names(x))]
 }) %>%
+  #mutate(disp = D) %>%
+  apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
   as.data.frame() %>%
-  mutate(disp = D) %>%
-  pivot_longer(-c("disp"), names_to="iter", values_to="mpg") 
+  mutate(disp = mtcars$disp)
+  #pivot_longer(-c("disp"), names_to="iter", values_to="mpg")
 
-ggplot() +
-  geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+# p1 <- ggplot() +
+#   geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
+#   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+
+p1 <- ggplot(post_pred) +
+  geom_line(mapping=aes(x=disp, y=`50%`)) +
+  geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="lightblue") +
   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+
+p2 <- ggplot(mapping=aes(x=disp, y=mpg),
+              data=mtcars) +
+  geom_point(aes(color=factor(cyl)))+
+  stat_smooth(method="loess",
+              level=0.89) +
+  labs(title="LOESS")
+
+grid.arrange(p1, p2)
+
 ```
+
+
+
