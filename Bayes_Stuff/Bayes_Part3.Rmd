@@ -424,26 +424,45 @@ Finally, I'll check the posterior predictive distribution, and compare it to the
 draws <- as.data.frame(mdl_gam) %>%
   head(100)
 
-# Expected value posterior predictive distribution
-post_pred <- apply(draws, 1, function(x) {
-  x["a"] + B %*% x[grepl("w", names(x))]
-}) %>%
-  #mutate(disp = D) %>%
-  apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
-  t() %>%
-  as.data.frame() %>%
-  mutate(disp = mtcars$disp)
-  #pivot_longer(-c("disp"), names_to="iter", values_to="mpg")
-
+# Method 1: Plot individual lines
+# post_pred <- apply(draws, 1, function(x) {
+#   x["a"] + B %*% x[grepl("w", names(x))]
+# }) %>%
+#   as.data.frame() %>%
+#   mutate(disp = mtcars$disp) %>%
+#   pivot_longer(-c("disp"), names_to="iter", values_to="mpg")
+# 
 # p1 <- ggplot() +
 #   geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
 #   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
 
-p1 <- ggplot(post_pred) +
+# Method 2: Calculate 89% interval for expected value of posterior predictive
+Epost_pred <- apply(draws, 1, function(x) {
+  x["a"] + B %*% x[grepl("w", names(x))]
+}) %>%
+  apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = mtcars$disp)
+
+# Method 3: Use posterior predictive from generated quantities
+
+post_pred <- draws %>% select(starts_with("mpg")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = mtcars$disp)
+
+p1 <- ggplot(Epost_pred) +
   geom_line(mapping=aes(x=disp, y=`50%`)) +
   geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="dodgerblue") +
+  geom_ribbon(data=post_pred,
+              mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
               alpha=0.5, fill="lightblue") +
   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+
+
 
 p2 <- ggplot(mapping=aes(x=disp, y=mpg),
               data=mtcars) +
