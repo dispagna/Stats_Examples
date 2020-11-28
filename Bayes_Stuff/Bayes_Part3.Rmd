@@ -90,7 +90,9 @@ mdl_code <- '
     real<lower=0.0> sigma;
   }
   model{
+    // Likelihood
     mpg ~ normal(a + b * disp, sigma);
+    // Priors
     a ~ normal(25, 10);
     b ~ uniform(-0.1, 0.0);
     sigma ~ exponential(0.2);
@@ -242,12 +244,15 @@ mdl_code_ppd <- '
     real<lower=0.0> sigma;
   }
   model{
+    // Likelihood
     mpg ~ normal(a + b * disp, sigma);
+    // Priors
     a ~ normal(25, 10);
     b ~ uniform(-0.1, 0.0);
     sigma ~ exponential(0.2);
   }
   generated quantities{
+    // Posterior Predictive
     real mpg_ppd[N] = normal_rng(a + b * disp, sigma);
   }
 '
@@ -286,7 +291,7 @@ First, I'll define the splines just as I did when using the _rethinking_ package
 ```{r}
 library(splines)
 
-num_knots <- 4
+num_knots <- 4  # number of interior knots
 knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
 B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
 
@@ -363,7 +368,7 @@ ggplot() +
 
 ### Posterior
 
-```{r}
+```{r results="hide"}
 # Define model
 
 mdl_code <- '
@@ -378,19 +383,20 @@ mdl_code <- '
     real a;
     real<lower=0.0> sigma;
     vector[num_basis] w;
-    //real<lower=0.0> sigma_w;
-    //real<lower=0.0> sigma_a;
+  }
+  transformed parameters{
+    vector[N] Y_hat = a + B*w;
   }
   model{
-    mpg ~ normal(a + B*w, sigma);
+    // Likelihood
+    mpg ~ normal(Y_hat, sigma);
+    // Priors
     a ~ normal(25, 10);
-    //a ~ normal(0, sigma_a);
-    //sigma_a ~ cauchy(0,1);
     sigma ~ exponential(0.2);
     w ~ normal(0, 5);
-    //sigma_w ~ cauchy(0,1);
   }
   generated quantities{
+    // Posterior Predictive
     real mpg_ppd[N] = normal_rng(a + B*w, sigma);
   }
 '
@@ -402,16 +408,16 @@ mdl_data <- list(N=nrow(mtcars),
                  disp = mtcars$disp)
 
 # Fit model
-mdl_gam <- stan(model_code=mdl_code, data=mdl_data)
+mdl1_gam <- stan(model_code=mdl_code, data=mdl_data)
 ```
 
 ```{r}
-print(mdl_gam)
+print(mdl1_gam, pars=c("a", "sigma", "w"))
 ```
 
 ### Posterior Predictive Distribution
 
-Finally, I'll check the posterior predictive distribution, and compare it to the loess.  
+Finally, I'll check the posterior predictive distribution.  This time I plot both the 89% credible interval for the expected vale of _mpg_ and the 89% credible interval for the posterior predictive distribution of _mpg_.   
 
 ```{r}
 
@@ -421,7 +427,7 @@ Finally, I'll check the posterior predictive distribution, and compare it to the
 #              knots=knot_list[-c(1,num_knots)], 
 #              intercept=TRUE)
 
-draws <- as.data.frame(mdl_gam) %>%
+draws <- as.data.frame(mdl1_gam) %>%
   head(100)
 
 # Method 1: Plot individual lines
@@ -436,16 +442,23 @@ draws <- as.data.frame(mdl_gam) %>%
 #   geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
 #   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
 
-# Method 2: Calculate 89% interval for expected value of posterior predictive
-Epost_pred <- apply(draws, 1, function(x) {
-  x["a"] + B %*% x[grepl("w", names(x))]
-}) %>%
-  apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+# Method 2a: Calculate 89% interval for expected value of posterior predictive
+# Epost_pred <- apply(draws, 1, function(x) {
+#   x["a"] + B %*% x[grepl("w", names(x))]
+# }) %>%
+#   apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+#   t() %>%
+#   as.data.frame() %>%
+#   mutate(disp = mtcars$disp)
+
+# Method 2b: Calculate 89% interval for expected value of posterior predictive from Y_hat
+Epost_pred <- draws %>% select(starts_with("Y_hat")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
   t() %>%
   as.data.frame() %>%
   mutate(disp = mtcars$disp)
 
-# Method 3: Use posterior predictive from generated quantities
+# Method 4: Use posterior predictive from generated quantities
 
 post_pred <- draws %>% select(starts_with("mpg")) %>%
   apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
@@ -453,27 +466,107 @@ post_pred <- draws %>% select(starts_with("mpg")) %>%
   as.data.frame() %>%
   mutate(disp = mtcars$disp)
 
-p1 <- ggplot(Epost_pred) +
+ggplot(Epost_pred) +
   geom_line(mapping=aes(x=disp, y=`50%`)) +
   geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
               alpha=0.5, fill="dodgerblue") +
   geom_ribbon(data=post_pred,
               mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
               alpha=0.5, fill="lightblue") +
-  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
+  labs(y="mpg")
 
-
-
-p2 <- ggplot(mapping=aes(x=disp, y=mpg),
-              data=mtcars) +
-  geom_point(aes(color=factor(cyl)))+
-  stat_smooth(method="loess",
-              level=0.89) +
-  labs(title="LOESS")
-
-grid.arrange(p1, p2)
 
 ```
 
+### Alternative model
 
+One challenge with splines is choosing the number of knots.  For the previous model, I tried several values for _num_knots_ until settling on 4.  However, there is a case study for splines with stan that uses a novel prior which addresses this issue.  The details are (here)[https://mc-stan.org/users/documentation/case-studies/splines_in_stan.html].
+
+```{r results="hide"}
+library(splines)
+
+num_knots <- 20  # number of interior knots
+knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
+B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
+
+# Define model with smoothing prior
+mdl_smooth_code <- '
+  data{
+    int<lower=1> N;
+    int<lower=1> num_basis;
+    vector[N] mpg;
+    vector[N] disp;
+    matrix[N, num_basis] B;
+  }
+  parameters{
+    real a;
+    real<lower=0.0> sigma;
+    vector[num_basis] w_raw;
+    real<lower=0.0> tau;
+  }
+  transformed parameters{
+    vector[num_basis] w;
+    vector[N] Y_hat;
+    w[1] = w_raw[1];
+    for (i in 2:num_basis)
+      w[i] = w[i-1] + w_raw[i]*tau;
+    Y_hat = a + B*w;
+  }
+  model{
+    // Likelihood
+    mpg ~ normal(Y_hat, sigma);
+    // Priors
+    a ~ normal(25, 10);
+    sigma ~ exponential(0.2);
+    w_raw ~ normal(0, 1);
+    tau ~ normal(0,1);
+  }
+  generated quantities{
+    real mpg_ppd[N] = normal_rng(a + B*w, sigma);
+  }
+'
+
+mdl_data <- list(N=nrow(mtcars), 
+                 num_basis=ncol(B),
+                 B=B,
+                 mpg = mtcars$mpg,
+                 disp = mtcars$disp)
+
+# Fit model with smoothing prior
+mdl2_gam_smooth <- stan(model_code=mdl_smooth_code, data=mdl_data,
+                 control=list(adapt_delta=0.99))
+
+# Fit model without smoothing prior
+mdl2_gam <- stan(model_code = mdl_code, data=mdl_data,
+                 control=list(adapt_delta=0.99))
+```
+
+```{r}
+draws <- as.data.frame(mdl2_gam) %>% head(100)
+
+Epost_pred <- draws %>% select(starts_with("Y_hat")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = mtcars$disp)
+
+draws_smooth <- as.data.frame(mdl2_gam_smooth) %>% head(100)
+
+Epost_pred_smooth <- draws_smooth %>% select(starts_with("Y_hat")) %>%
+  apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = mtcars$disp)
+
+rbind(Epost_pred %>% select(c("disp", `50%`)) %>% mutate(type="without smoothing prior"),
+      Epost_pred_smooth %>% select(c("disp", `50%`)) %>% mutate(type="with smoothing prior")) %>%
+  ggplot() +
+  geom_line( mapping=aes(x=disp, y=`50%`, linetype=type) ) +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
+  labs(y="mpg")
+
+```
+
+The plot above shows that even with a large number of knots (in this case 20), the model with the smoothing prior prevents over-fitting when compared to the model without the smoothing prior.
 
