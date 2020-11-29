@@ -10,7 +10,7 @@ output:
 
 # Introduction
 
-In this post, I'll work through the same example in Part 1 using the _rstan_ package.  Recall that I'm using the mtcars dataset, and I'm interested in a model with response _mpg_ and predictor _disp_.
+In this post, I'll work through the mtcars example again but this time using the _rstan_ package.  Recall that I'm interested in a model with response _mpg_ and predictor _disp_.
 
 # Setup Environment
 
@@ -57,7 +57,7 @@ mtcars %>%
 
 # Linear Model 
 
-Again I'll start with a linear model even though it clearly isn't going to be a great fit to the data. Like the _rethinking_package, _rstan_ doesn't have default priors, so I need to explicitly choose them:
+Again I'll start with a linear model even though it clearly isn't going to be a great fit to the data. Like the _rethinking_ package, _rstan_ doesn't have default priors, so I need to explicitly choose them:
 
 \begin{align*}
   mpg \sim N(\mu, \sigma^2) \\
@@ -126,7 +126,7 @@ mdl1 <- stan(model_code=mdl_code, data=mdl_data, model_name="mdl")
 
 ## Prior Predictive Distribution
 
-Next, I'll examine the prior predictive distribution to see if the default priors seem reasonable. This model is simple enough that I could manually construct the prior predictive distribution (see example here).  But I can also have _stan_ generate the prior predictive distribution which will be useful for more complex models. To do this, I create another model with just the `data` and `generated quantities` section.  The `generated quantities` section mirrors the `model` section except it is now drawing samples from the priors without conditioning on the observed data. Also, in the _stan_ call I need to set the sampling algorithm for fixed parameters.
+First, I'll examine the prior predictive distribution to see if the default priors seem reasonable. This model is simple enough that I could manually construct the prior predictive distribution (see example [here](https://melissa-wong.github.io/bayesian/rethinking/Bayes_Part2/).  But I can also have _stan_ generate the prior predictive distribution which will be useful for more complex models. To do this, I create another model with just the `data` and `generated quantities` section.  The `generated quantities` section mirrors the `model` section except it is now drawing samples from the priors without conditioning on the observed data. Also, in the _stan_ call I need to set the sampling algorithm for fixed parameters.
 
 ```{r results='hide'}
 # Plot prior predictive distribution
@@ -177,6 +177,8 @@ ggplot() +
 
 ## Diagnostic Plots
 
+Since the priors looks reasonable, the next step is to examine the diagnostic plots for the fitted model.
+
 ```{r}
 mcmc_trace(mdl1, pars=c("a", "b", "sigma"))
 ```
@@ -206,7 +208,7 @@ plot(mdl1, ci_level=0.89)
 
 ### Posterior Predictive Distribution
 
-Finally, I'll check the posterior predictive distribution. Using the posterior samples, I can plot the expected value of the posterior predictive distribution.
+Finally, I'll check the posterior predictive distribution (ppd). Using the posterior samples, I can plot individual lines for the expected value of the ppd.
 
 ```{r}
 
@@ -227,7 +229,7 @@ ggplot() +
   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
 ```
 
-It's also possible to have _stan_ generate the posterior predictive distribution by adding a _generated quantities_ section to the model similar to what I did for the prior predictive distribution. 
+However, the expected value of the ppd doesn't include $\sigma$. It's possible to have _stan_ automatically generate samples from the posterior predictive distribution itself by adding a _generated quantities_ section to the model (similar to what I did for the prior predictive distribution). 
 
 ```{r results="hide"}
 # Define model
@@ -243,9 +245,12 @@ mdl_code_ppd <- '
     real<lower=-0.1, upper=0.0> b;
     real<lower=0.0> sigma;
   }
+  transformed parameters{
+    vector[N] Y_hat = a + b * disp;
+  }
   model{
     // Likelihood
-    mpg ~ normal(a + b * disp, sigma);
+    mpg ~ normal(Y_hat, sigma);
     // Priors
     a ~ normal(25, 10);
     b ~ uniform(-0.1, 0.0);
@@ -253,7 +258,7 @@ mdl_code_ppd <- '
   }
   generated quantities{
     // Posterior Predictive
-    real mpg_ppd[N] = normal_rng(a + b * disp, sigma);
+    real mpg_ppd[N] = normal_rng(Y_hat, sigma);
   }
 '
 
@@ -295,6 +300,10 @@ num_knots <- 4  # number of interior knots
 knot_list <- quantile(mtcars$disp, probs=seq(0,1,length.out = num_knots))
 B <- bs(mtcars$disp, knots=knot_list[-c(1,num_knots)], intercept=TRUE)
 
+df1 <- cbind(disp=mtcars$disp, B) %>%
+  as.data.frame() %>%
+  pivot_longer(-disp, names_to="spline", values_to="val")
+
 # Plot at smaller intervals so curves are smooth
 N<- 50
 D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
@@ -302,16 +311,20 @@ B_plot <- bs(D,
              knots=knot_list[-c(1,num_knots)], 
              intercept=TRUE)
 
-cbind(disp=seq(min(mtcars$disp), max(mtcars$disp)), B_plot) %>%
+df2 <- cbind(disp=D, B_plot) %>%
   as.data.frame() %>%
-  pivot_longer(-disp, names_to="spline", values_to="val") %>%
-  ggplot() +
-  geom_line(mapping=aes(x=disp, y=val, color=spline), linetype="dashed")
+  pivot_longer(-disp, names_to="spline", values_to="val")
+
+ggplot(mapping=aes(x=disp, y=val, color=spline)) +
+  geom_point(data=df1) +
+  geom_line(data=df2, linetype="dashed")
 ```
 
-### Prior Predictive Distribution
+Note: the dashed lines are the splines and the points are the values of the spline at the specific values of _mtcars$disp_; the points are inputs into the _stan_ model.
 
-```{r}
+## Prior Predictive Distribution
+
+```{r results="hide"}
 # Define model
 
 mdl2 <- '
@@ -366,7 +379,7 @@ ggplot() +
               alpha=0.5, fill="lightblue")
 ```
 
-### Posterior
+## Posterior
 
 ```{r results="hide"}
 # Define model
@@ -397,11 +410,11 @@ mdl_code <- '
   }
   generated quantities{
     // Posterior Predictive
-    real mpg_ppd[N] = normal_rng(a + B*w, sigma);
+    real mpg_ppd[N] = normal_rng(Y_hat, sigma);
   }
 '
 
-mdl_data <- list(N=nrow(mtcars), 
+mdl_data <- list(N=nrow(mtcars),
                  num_basis=ncol(B),
                  B=B,
                  mpg = mtcars$mpg,
@@ -415,50 +428,42 @@ mdl1_gam <- stan(model_code=mdl_code, data=mdl_data)
 print(mdl1_gam, pars=c("a", "sigma", "w"))
 ```
 
-### Posterior Predictive Distribution
+## Posterior Predictive Distribution
 
-Finally, I'll check the posterior predictive distribution.  This time I plot both the 89% credible interval for the expected vale of _mpg_ and the 89% credible interval for the posterior predictive distribution of _mpg_.   
+Finally, I'll examine the posterior predictive distribution (ppd). One method is to manually calculate the expected value of the ppd (i.e., does not incorporate $\sigma$) and plot the 89% credible interval.
 
 ```{r}
-
-# N<- 50
-# D <- seq(min(mtcars$disp), max(mtcars$disp), length.out = N)
-# B_plot <- bs(D, 
-#              knots=knot_list[-c(1,num_knots)], 
-#              intercept=TRUE)
-
 draws <- as.data.frame(mdl1_gam) %>%
   head(100)
 
-# Method 1: Plot individual lines
-# post_pred <- apply(draws, 1, function(x) {
-#   x["a"] + B %*% x[grepl("w", names(x))]
-# }) %>%
-#   as.data.frame() %>%
-#   mutate(disp = mtcars$disp) %>%
-#   pivot_longer(-c("disp"), names_to="iter", values_to="mpg")
-# 
-# p1 <- ggplot() +
-#   geom_line(data=post_pred, mapping=aes(x=disp, y=mpg, group=iter), alpha=0.2) +
-#   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl)))
+# Method 1: Manually calculate credible interval for expected value of ppd
+post_pred <- apply(draws, 1, function(x) {
+  x["a"] + B_plot %*% x[grepl("w", names(x))]
+}) %>%
+  apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
+  t() %>%
+  as.data.frame() %>%
+  mutate(disp = D) 
 
-# Method 2a: Calculate 89% interval for expected value of posterior predictive
-# Epost_pred <- apply(draws, 1, function(x) {
-#   x["a"] + B %*% x[grepl("w", names(x))]
-# }) %>%
-#   apply(1, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
-#   t() %>%
-#   as.data.frame() %>%
-#   mutate(disp = mtcars$disp)
+ggplot(post_pred) +
+  geom_line(mapping=aes(x=disp, y=`50%`)) +
+  geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="dodgerblue") +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
+  labs(y="mpg")
+```
 
-# Method 2b: Calculate 89% interval for expected value of posterior predictive from Y_hat
+Alternatively, I can plot the 89% credible intervals for the ppd (which includes $\sigma$) and expected value of the ppd from the _mpg_ppd_ and _Y_hat_ draws that were generated automatically by _stan_.
+
+```{r}
+# Method 2: Calculate 89% interval for expected value of posterior predictive from Y_hat
 Epost_pred <- draws %>% select(starts_with("Y_hat")) %>%
   apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
   t() %>%
   as.data.frame() %>%
   mutate(disp = mtcars$disp)
 
-# Method 4: Use posterior predictive from generated quantities
+# Method 3: Use posterior predictive from generated quantities
 
 post_pred <- draws %>% select(starts_with("mpg")) %>%
   apply(2, function(x) quantile(x, probs=c(0.055, 0.5, 0.945))) %>%
@@ -468,20 +473,22 @@ post_pred <- draws %>% select(starts_with("mpg")) %>%
 
 ggplot(Epost_pred) +
   geom_line(mapping=aes(x=disp, y=`50%`)) +
-  geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
-              alpha=0.5, fill="dodgerblue") +
   geom_ribbon(data=post_pred,
               mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
               alpha=0.5, fill="lightblue") +
+    geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
+              alpha=0.5, fill="dodgerblue") +
   geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
   labs(y="mpg")
 
 
 ```
 
-### Alternative model
+Note that the darker credible interval above is equivalent to interval I previously calculated manually.  The reason the intervals in this plot don't look as smooth is because I specified the model such that _Y_hat_ and _mpg_ppd_ draws are only at the specific values of _mtcars$disp_.
 
-One challenge with splines is choosing the number of knots.  For the previous model, I tried several values for _num_knots_ until settling on 4.  However, there is a case study for splines with stan that uses a novel prior which addresses this issue.  The details are (here)[https://mc-stan.org/users/documentation/case-studies/splines_in_stan.html].
+## Alternative model
+
+One challenge with splines is choosing the number of knots.  For the previous model, I tried several values for _num_knots_ until settling on 4.  However, there is a _stan_ case study for splines that uses a novel prior which addresses this issue.  The details are [here](https://mc-stan.org/users/documentation/case-studies/splines_in_stan.html).
 
 ```{r results="hide"}
 library(splines)
@@ -568,5 +575,5 @@ rbind(Epost_pred %>% select(c("disp", `50%`)) %>% mutate(type="without smoothing
 
 ```
 
-The plot above shows that even with a large number of knots (in this case 20), the model with the smoothing prior prevents over-fitting when compared to the model without the smoothing prior.
+The plot above shows that even with a large number of knots (in this case 20), the model with the smoothing prior significantly reduces over-fitting when compared to the model without the smoothing prior. The model without the smoothing prior gives similar results as to the fit I did with the _rethinking_ package [here](https://melissa-wong.github.io/bayesian/rethinking/Bayes_Part2/#posterior-predictive-distribution-1).
 
