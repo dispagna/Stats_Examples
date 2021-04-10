@@ -478,7 +478,7 @@ ggplot(Epost_pred) +
               alpha=0.5, fill="lightblue") +
     geom_ribbon(mapping=aes(x=disp, ymin=`5.5%`, ymax=`94.5%`), 
               alpha=0.5, fill="dodgerblue") +
-  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg)) +
   labs(y="mpg")
 
 
@@ -570,7 +570,7 @@ rbind(Epost_pred %>% select(c("disp", `50%`)) %>% mutate(type="without smoothing
       Epost_pred_smooth %>% select(c("disp", `50%`)) %>% mutate(type="with smoothing prior")) %>%
   ggplot() +
   geom_line( mapping=aes(x=disp, y=`50%`, linetype=type) ) +
-  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg, color=factor(cyl))) +
+  geom_point(data=mtcars, mapping=aes(x=disp, y=mpg)) +
   labs(y="mpg")
 
 ```

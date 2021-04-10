@@ -1,0 +1,73 @@
+---
+title: "Confidence Intervals for Proportions"
+author: "Melissa Wong"
+date: "4/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(binom)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+# Description
+
+This is a quick simulation to compare the effect of three different priors on the Bayesian credible interval coverage.  
+
+# Priors
+
+The three priors considered are plotted below.
+
+```{r}
+x <- seq(0.0, 1.0, 0.01)
+ggplot() +
+  geom_line(mapping=aes(x=x, y=dbeta(x, 0.5, 0.5),
+            color="alpha=beta=0.5")) +
+  geom_line(mapping=aes(x=x, y=dbeta(x, 1, 1),
+            color="alpha=beta=1")) +
+    geom_line(mapping=aes(x=x, y=dbeta(x, 2, 2),
+            color="alpha=beta=2")) +
+  labs(title="Beta priors",
+       x="proportion", y="probability density")
+```
+
+# Coverage
+
+The coverage for the three Bayesian credible intervals is compared to the Agresti-Coull coverage in the plots below.
+
+```{r}
+N <- 100
+probs <- tibble(p = seq(0.01, 0.99, 0.01))
+sims <- cbind(probs, N, t(apply(probs, 1, function(x) rbinom(1000, N, prob=x)))) %>%
+  pivot_longer(cols=-c(p, N), names_to="iter",
+                             values_to="x")
+
+# Calculate CIs for the three priors
+CIs <- rbind(sims %>% mutate(shape=0.5),
+             sims %>% mutate(shape=1),
+             sims %>% mutate(shape=2)) %>%
+  mutate(res=binom.bayes(x, N, prior.shape1=shape, 
+                         prior.shape2=shape)[7:8],
+         resAC=binom.agresti.coull(x,N)[5:6]) %>%
+  mutate(isCovered = res$lower <= p & p <= res$upper) %>%
+  mutate(isCoveredAC = resAC$lower <= p & p <= resAC$upper)
+
+CIs %>%
+  group_by(p, shape) %>%
+  summarize(coverage = mean(isCovered),
+            coverageAC = mean(isCoveredAC)) %>%
+  ggplot() +
+  geom_line(mapping=aes(x=p, y=coverage,
+                        color=factor(shape))) +
+  geom_line(mapping=aes(x=p, y=coverageAC), 
+            color="grey") +
+  facet_wrap(~shape, nrow=3)
+```
+# Conclusion
+
+The Jeffries prior ($\alpha=\beta=0.5$) has the worst coverage properties.  The $\alpha=\beta=1$ and $\alpha=\beta=2$ priors show better coverage properties. Of note, as the probability $\to 0/1$, the $\alpha=\beta=1$ prior tends to be conservative whereas the $\alpha=\beta=2$ is too optimistic.
+
