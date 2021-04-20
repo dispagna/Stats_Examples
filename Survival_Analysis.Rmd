@@ -1,0 +1,84 @@
+---
+title: "Survival Analysis Example"
+author: "Melissa Wong"
+date: "4/19/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+# Description
+
+Example comparing original method for calculating $P[sync]$ vs using survival analysis.
+
+# Simulate Data
+
+```{r}
+N <- 100
+# Time until successful sync ~ Normal with mean=2 sec, sd=0.5
+df <- tibble(time = rnorm(N, mean = 2, sd = 0.5),
+             success = 1)
+# Simulate 30% of runs not syncing within 5 sec (max run duration)
+ids <- sample(1:N, 30)
+df$success[ids] = 0
+df$time[ids] = 5
+```
+
+# Original Analysis
+
+Calculate probability of successful sync with Beta(1,1) prior so $P[sync] = Beta(\#successes+1, \#failures+1)$
+
+```{r}
+library(binom)
+
+nsuccess <- sum(df$success)
+(res <- binom.bayes(nsuccess, N, type="highest", prior.shape1 = 1,
+            prior.shape2 = 1))
+binom.bayes.densityplot(res)
+```
+
+And the boxplot of time until successful sync.
+
+```{r}
+df %>%
+  filter(success == 1) %>%
+  ggplot(mapping=aes(x=time, y="Success")) +
+  geom_boxplot() +
+  geom_jitter()
+```
+
+# Improved method
+
+Use survival analysis which makes use of the time to event and gives a more informative distribution of P[sync].
+
+In this example, the "event" of interest is successful sync.
+
+```{r}
+library(survival)
+library(survminer)
+
+fit <- survfit(Surv(time, success)~1, data=df)
+#summary(fit)
+```
+```{r}
+ggsurvplot(fit, conf.int = TRUE, surv.median.line = "hv") +
+  labs(y="Probability of No Sync")
+```
+
+
+```{r include=FALSE}
+ggsurvplot(fit, conf.int = TRUE, fun="cumhaz") +
+  labs(title="Cumulative Hazard")
+```
+```{r}
+ggsurvplot(fit, conf.int = TRUE, surv.median.line = "hv",
+           fun="event") +
+  labs(y="Probability of Sync")
+```
+This is a more informative analysis because we don't just get a single overall estimate for $P[sync]$ but rather $P[sync]$ as a function of time.
