@@ -55,9 +55,11 @@ df %>%
 
 # Improved method
 
-Use survival analysis which makes use of the time to event and gives a more informative distribution of P[sync].
+Use survival analysis (specifically Kaplan-Meier) which makes use of the time to event and gives a more informative distribution of P[sync].
 
 In this example, the "event" of interest is successful sync.
+
+Note: Kaplan-Meier only applicable for single categorical predictor.  Use Cox proportional hazard model for multiple/quantitative predictors.
 
 ```{r}
 library(survival)
@@ -82,3 +84,31 @@ ggsurvplot(fit, conf.int = TRUE, surv.median.line = "hv",
   labs(y="Probability of Sync")
 ```
 This is a more informative analysis because we don't just get a single overall estimate for $P[sync]$ but rather $P[sync]$ as a function of time.
+
+# Cox Model Example
+
+```{r}
+data("lung")
+head(lung)
+
+fit.cox <- coxph(Surv(time, status) ~ sex, 
+                 data = lung)
+summary(fit.cox)
+# Baseline
+# ggsurvplot(survfit(fit.cox, data=lung), 
+#            conf.int = TRUE,
+#            surv.median.line = "hv")
+
+sex_df <- with(lung,
+               data.frame(sex = c(1, 2)))
+fit <- survfit(fit.cox, newdata = sex_df)
+ggsurvplot(fit, conf.int = TRUE, data=sex_df, legend.labs=c("Sex=1", "Sex=2"),
+           ggtheme = theme_minimal())
+```
+
+```{r}
+fit.km <- survfit(Surv(time, status) ~ sex, 
+                 data = lung)
+ggsurvplot(fit.km, conf.int = TRUE, surv.median.line = "hv")
+```
+
