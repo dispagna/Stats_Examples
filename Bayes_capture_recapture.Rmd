@@ -1,0 +1,117 @@
+---
+title: "Bayes Capture-Recapture Example"
+author: "Melissa Wong"
+date: "6/16/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(out.width = "50%")
+knitr::opts_current$set(fig.align = "center")
+library(tidyverse)
+library(RColorBrewer)
+
+options(ggplot2.discrete.color=brewer.pal(8, "Dark2"))
+options(ggplot2.discrete.fill=brewer.pal(8, "Dark2"))
+```
+
+
+# One-parameter, closed system model
+
+Makes the following assumptions:
+
+* All bugs are equally likely to be found
+* Both test teams are equally likely to find bugs
+* Findings for each test are independent
+* Total number of bugs is fixed
+
+Given these assumptions, then the likelihood for _y_ bugs found by both test teams is given by the hypergeometric distribution
+
+$$p(y_i;N, n_i, k_i) = \frac{\binom{k_i}{y_i}\binom{N-k_i}{n_i-y_i}}{\binom{N}{n_i}}$$
+We only need a prior for $N$, so the posterior model is
+
+\begin{align*}
+  p(N | y, n, k) &\propto \prod_i \frac{\binom{k_i}{y_i}\binom{N-k_i}{n_i-y_i}}{\binom{N}{n_i}} * p(N) \\
+  p(N) &\propto Uniform(1, 200)
+\end{align*}
+
+```{r}
+# Simulate data
+N <- 50
+n <- c(10, 20)
+theta <- rep(NA, 2)
+theta[1] <- rhyper(1, N, 0, n[1])
+theta[2] <- rhyper(1, theta[1], N-theta[1], n[2])
+```
+
+```{r}
+# Simulate 1st capture and mark
+capture <- tibble(N = seq(0:201),
+                  prior = c(0, rep(0.005, 200), 0))
+lik <- dhyper(theta[1], capture$N, 0, n[1])
+lik[is.na(lik)] <- 0
+post_unstd <- lik * capture$prior
+capture$post1 <- post_unstd / sum(post_unstd)
+```
+
+
+```{r echo=FALSE}
+# See https://stats.stackexchange.com/questions/381520/how-can-i-estimate-the-highest-posterior-density-interval-from-a-set-of-x-y-valu
+
+# Find approximate HPDI
+hdi = function(x, x.density, coverage)
+{
+  best = 0
+  for (ai in 1 : (length(x) - 1))
+  {
+    for (bi in (ai + 1) : length(x))
+    {
+      mass = sum(diff(x[ai : bi]) * x.density[(ai + 1) : bi])
+      if (mass >= coverage && mass / (x[bi] - x[ai]) > best)
+      {
+        best = mass / (x[bi] - x[ai])
+        ai.best = ai
+        bi.best = bi
+      }
+    }
+  }
+  c(x[ai.best], x[bi.best])
+}
+```
+
+```{r}
+# Simulate recapture
+# posterior from 1st capture is now prior for recapture
+lik <- dhyper(theta[2], n[1], capture$N-n[1], n[2])
+lik[is.na(lik)] <- 0
+post_unstd <- lik * capture$post1
+capture$post2 <- post_unstd / sum(post_unstd)
+
+# Calculate 95% HPDI
+hpdi <- capture$N[hdi(capture$N, capture$post2, 0.95)]
+
+capture %>%
+  pivot_longer(-N, names_to="type", 
+               values_to="prob") %>%
+  ggplot() +
+  geom_line(aes(x=N, y=prob, color=type)) +
+  geom_vline(xintercept=hpdi, 
+             linetype="dotted")
+```
+
+* Total number of simulated bugs: `r N`.
+* Initial mark group size (all tagged): `r n[1]`
+* Recapture group size: `r n[2]`
+* Recapture group, number previously tagged: `r theta[2]`
+
+The 95% highest posterior density interval is `r hpdi`.
+
+The maximum a posteriori estimate for N is `r capture$N[which.max(capture$post2)]`.
+
+
+
