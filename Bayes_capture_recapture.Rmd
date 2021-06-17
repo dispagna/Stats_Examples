@@ -32,8 +32,10 @@ Makes the following assumptions:
 
 Given these assumptions, then the likelihood for _y_ bugs found by both test teams is given by the hypergeometric distribution
 
-$$p(y_i;N, n_i, k_i) = \frac{\binom{k_i}{y_i}\binom{N-k_i}{n_i-y_i}}{\binom{N}{n_i}}$$
-We only need a prior for $N$, so the posterior model is
+$$p(y_i;N, n_i, k_{i-1}) = \frac{\binom{k_i}{y_i}\binom{N-k_{i-1}}}{n_i-y_i}}{\binom{N}{n_i}}$$
+where $y_i$ is the number of previously marked bugs found on recapture, $n_i$ is the sample size of test $i$ and $k_{i-1}$ is the number of previously marked bugs.
+
+We define a prior for $N$, so the model is
 
 \begin{align*}
   p(N | y, n, k) &\propto \prod_i \frac{\binom{k_i}{y_i}\binom{N-k_i}{n_i-y_i}}{\binom{N}{n_i}} * p(N) \\
@@ -113,5 +115,13 @@ The 95% highest posterior density interval is `r hpdi`.
 
 The maximum a posteriori estimate for N is `r capture$N[which.max(capture$post2)]`.
 
+# Three-parameter model, closed system
 
+Makes the following assumptions:
+
+* The test teams are not equally proficient 
+* Findings for each test are independent
+* Total number of bugs is fixed
+
+Given these assumptions, then the likelihood for _y_ bugs found by both test teams is given by...
 
