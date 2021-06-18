@@ -32,7 +32,9 @@ Makes the following assumptions:
 
 Given these assumptions, then the likelihood for _y_ bugs found by both test teams is given by the hypergeometric distribution
 
-$$p(y_i;N, n_i, k_{i-1}) = \frac{\binom{k_i}{y_i}\binom{N-k_{i-1}}}{n_i-y_i}}{\binom{N}{n_i}}$$
+$$p(y_i;N, n_i, k_{i-1}) = \frac{\binom{k_i}{y_i}
+                                  \binom{N-k_{i-1}}{n_i-y_i}}{\binom{N}{n_i}}$$
+
 where $y_i$ is the number of previously marked bugs found on recapture, $n_i$ is the sample size of test $i$ and $k_{i-1}$ is the number of previously marked bugs.
 
 We define a prior for $N$, so the model is
@@ -123,5 +125,105 @@ Makes the following assumptions:
 * Findings for each test are independent
 * Total number of bugs is fixed
 
-Given these assumptions, then the likelihood for _y_ bugs found by both test teams is given by...
+Given these assumptions, then the likelihood for _k_ bugs found by both test teams is described by a multinomial distribution
+
+$$p(k|N, p1, p2) = \frac{N!}{k_{00}!k_{01}!k_{10}!k_{11}!}
+q_{00}^{k_{00}}q_{01}^{k_{01}}q_{10}^{k_{10}}q_{11}^{k_{11}}$$
+
+where 
+
+\begin{align*}
+  k_{10} &= \text{bugs found by first test and not second} \\
+  k_{01} &= \text{bugs found by second test and not first} \\
+  k_{11} &= \text{bugs found by both tests} \\
+  k_{00} &= N - k_{10} - k{01} - k{11} \text{bugs found by neither test} \\
+  p1 &= \text{probability test1 finds bug} \\
+  p2 &= \text{probability test2 finds bug} \\
+  q_{00} &= (1-p1) * (1-p2) \\
+  q_{10} &= p1 *  (1-q2) \\
+  q_{01} &= (1-p1)*p2\\
+  q_{11} &= p1 * p2
+\end{align*}
+
+And we need priors for $N, p1, p2$; let's keep same prior for N and Uniform[0.1,1] for $p1, p2$.
+
+
+```{r}
+# Simulate 1st capture and mark
+prior_p1 <- tibble(p1 = seq(0, 1, length.out=11),
+                   prob1 = c(0, rep(0.1, 10)))
+
+prior_p2 <- tibble(p2 = seq(0, 1, length.out=11),
+                   prob2 = c(0, rep(0.1, 10)))
+
+prior_N <- tibble(N = seq(0:201),
+                  prob = c(0, rep(0.005, 200), 0))
+
+grid <- crossing(prior_N, prior_p1, prior_p2) %>%
+  mutate(lik = 0,
+         post_unstd = 0)
+
+k10 <- n[1] - theta[2]
+k01 <- n[2] - theta[2]
+k11 <- theta[2]
+
+for(i in seq_along(grid$N))
+{
+  k00 <- grid[i,]$N - k10 - k01 - k11
+  if (k00 < 0)
+  {
+    grid[i,]$lik <- 0.0
+    grid[i,]$post_unstd <- 0.0
+  }
+  else{
+    q00 <- (1-grid[i,]$p1) * (1-grid[i,]$p2)
+    q10 <- grid[i,]$p1 * (1-grid[i,]$p2)
+    q01 <- (1-grid[i,]$p1) * grid[i,]$p2
+    q11 <- grid[i,]$p1 * grid[i,]$p2
+    grid[i,]$lik <- dmultinom(x=c(k00, k10, k01, k11),
+                             prob = c(q00, q10, q01, q11))
+    grid[i,]$post_unstd <- grid[i,]$lik * grid[i,]$prob * grid[i,]$prob1 * grid[i,]$prob2
+  }
+}
+
+grid$post <- grid$post_unstd/sum(grid$post_unstd)
+```
+
+
+```{r}
+# Plot N
+postN <- grid %>%
+  group_by(N) %>%
+  summarize(posterior=sum(post)) %>%
+  mutate(prior = prior_N$prob)
+
+# Calculate 95% HPDI
+hpdi <- postN$N[hdi(postN$N, postN$posterior, 0.95)]
+
+postN %>%
+  pivot_longer(-N, names_to="type", values_to = "prob") %>%
+ggplot() +
+  geom_line(mapping=aes(x=N, y=prob, color=type)) +
+  geom_vline(xintercept=hpdi, 
+             linetype="dotted")
+```
+
+* Total number of simulated bugs: `r N`.
+* Initial mark group size (all tagged): `r n[1]`
+* Recapture group size: `r n[2]`
+* Recapture group, number previously tagged: `r theta[2]`
+
+The 95% highest posterior density interval is `r hpdi`.
+
+The maximum a posteriori estimate for N is `r postN$N[which.max(postN$posterior)]`.
+
+```{r}
+postp1 <- grid %>%
+  group_by(p1) %>%
+  summarize(prob=sum(post))
+
+postp2 <- grid %>%
+  group_by(p2) %>%
+  summarize(prob=sum(post))
+```
 
