@@ -54,6 +54,12 @@ theta[2] <- rhyper(1, theta[1], N-theta[1], n[2])
 ```
 
 ```{r}
+n <- c(14, 12)
+theta <- c(14, 2)
+```
+
+
+```{r}
 # Simulate 1st capture and mark
 capture <- tibble(N = seq(0:201),
                   prior = c(0, rep(0.005, 200), 0))
@@ -100,6 +106,7 @@ capture$post2 <- post_unstd / sum(post_unstd)
 hpdi <- capture$N[hdi(capture$N, capture$post2, 0.95)]
 
 capture %>%
+  select(-post1) %>%
   pivot_longer(-N, names_to="type", 
                values_to="prob") %>%
   ggplot() +
@@ -218,12 +225,49 @@ The 95% highest posterior density interval is `r hpdi`.
 The maximum a posteriori estimate for N is `r postN$N[which.max(postN$posterior)]`.
 
 ```{r}
-postp1 <- grid %>%
-  group_by(p1) %>%
-  summarize(prob=sum(post))
+
 
 postp2 <- grid %>%
   group_by(p2) %>%
   summarize(prob=sum(post))
 ```
 
+```{r}
+# Plot p1
+postp1 <- grid %>%
+  group_by(p1) %>%
+  summarize(posterior=sum(post)) %>%
+  mutate(prior = prior_p1$prob1) %>%
+  mutate("Test" = "1") %>%
+  rename(test_prob=p1)
+
+# Plot p2
+postp2 <- grid %>%
+  group_by(p2) %>%
+  summarize(posterior=sum(post)) %>%
+  mutate(prior = prior_p2$prob2) %>%
+  mutate("Test" = "2") %>%
+  rename(test_prob=p2)
+
+# Calculate 95% HPDI
+# hpdi <- postp1$p1[hdi(postp1$p1, postp1$posterior, 0.95)]
+
+rbind(postp1, postp2) %>%
+  pivot_longer(-c(Test, test_prob), names_to="type", values_to = "prob") %>%
+ggplot(mapping=aes(x=test_prob, y=prob, color=Test, shape=type)) +
+  geom_line() +
+  geom_point() +
+  labs(x="Test Probability of Finding Bugs", y="Probability")
+```
+
+```{r}
+
+
+# Calculate 95% HPDI
+# hpdi <- postp1$p1[hdi(postp1$p1, postp1$posterior, 0.95)]
+
+postp1 %>%
+  pivot_longer(-p2, names_to="type", values_to = "prob") %>%
+ggplot() +
+  geom_line(mapping=aes(x=p2, y=prob, color=type)) 
+```
